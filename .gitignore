@@ -27,3 +27,6 @@ ENV/
 Thumbs.db
 .idea/
 .vscode/
+
+catboost_info/
+
