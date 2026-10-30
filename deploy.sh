@@ -53,3 +53,4 @@ echo "• FastAPI Backend:       http://<YOUR_IP>:8000"
 echo "• Swagger Documentation: http://<YOUR_IP>:8000/docs"
 echo "• Streamlit Admin UI:    http://<YOUR_IP>:8501"
 echo "=========================================================="
+
