@@ -1,14 +1,14 @@
-import os
-import sys
 import gzip
 import json
+import os
 import time
-import joblib
 from collections import Counter
-from sklearn.model_selection import train_test_split
+
+import joblib
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report, accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, classification_report, f1_score
+from sklearn.model_selection import train_test_split
 
 from src.preprocessor import normalize_cp1251_kz
 from src.rules_mapper import label_ticket
@@ -70,7 +70,13 @@ def main():
             else:
                 r_count += 1
 
-            msgs = " ".join([m.get("text", "") for m in item.get("messages", []) if m.get("role") == "player"])
+            msgs = " ".join(
+                [
+                    m.get("text", "")
+                    for m in item.get("messages", [])
+                    if m.get("role") == "player"
+                ]
+            )
             text_norm = normalize_cp1251_kz(msgs)
             raw_refs = str(item.get("rule_refs_raw", "") or "")
             cat, _ = label_ticket(item, text_norm)
@@ -88,25 +94,23 @@ def main():
 
     # 3. Train-Test Split
     X_train, X_val, y_train, y_val = train_test_split(
-        train_texts, train_labels, test_size=0.15, random_state=42, stratify=train_labels
+        train_texts,
+        train_labels,
+        test_size=0.15,
+        random_state=42,
+        stratify=train_labels,
     )
 
     print("\nVectorizing features (TF-IDF)...")
     vectorizer = TfidfVectorizer(
-        ngram_range=(1, 2),
-        min_df=2,
-        max_features=40000,
-        sublinear_tf=True
+        ngram_range=(1, 2), min_df=2, max_features=40000, sublinear_tf=True
     )
     X_train_vec = vectorizer.fit_transform(X_train)
     X_val_vec = vectorizer.transform(X_val)
 
     print("Training LogisticRegression classifier (fast & calibrated)...")
     model = LogisticRegression(
-        C=2.5,
-        max_iter=300,
-        class_weight="balanced",
-        solver="lbfgs"
+        C=2.5, max_iter=300, class_weight="balanced", solver="lbfgs"
     )
     t0 = time.time()
     model.fit(X_train_vec, y_train)
@@ -119,7 +123,7 @@ def main():
     f1_macro = f1_score(y_val, y_pred, average="macro")
 
     print("\n--- VALIDATION METRICS ---")
-    print(f"Accuracy:  {acc:.4f} ({acc*100:.2f}%)")
+    print(f"Accuracy:  {acc:.4f} ({acc * 100:.2f}%)")
     print(f"Macro F1:  {f1_macro:.4f}")
     print("\nClassification Report:")
     print(classification_report(y_val, y_pred, digits=4))
@@ -138,7 +142,7 @@ def main():
         "model": model,
         "vectorizer": vectorizer,
         "classes": model.classes_,
-        "metrics": {"accuracy": acc, "macro_f1": f1_macro, "latency_ms": elapsed}
+        "metrics": {"accuracy": acc, "macro_f1": f1_macro, "latency_ms": elapsed},
     }
     joblib.dump(save_obj, MODEL_PATH)
     print(f"\nModel saved successfully to {MODEL_PATH}")

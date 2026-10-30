@@ -1,26 +1,29 @@
-import os
-import sys
 import gzip
 import json
+import os
+import sys
 import time
-import numpy as np
-from scipy import sparse
 from collections import Counter
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics import classification_report, accuracy_score, f1_score
-from catboost import CatBoostClassifier
+
 import joblib
+import numpy as np
+from catboost import CatBoostClassifier
+from scipy import sparse
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics import accuracy_score, f1_score
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-if hasattr(sys.stderr, 'reconfigure'):
-    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-from src.preprocessor import normalize_cp1251_kz, extract_facts
+from src.preprocessor import extract_facts, normalize_cp1251_kz
 from src.rules_mapper import label_ticket
 
-MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models")
+MODEL_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models"
+)
 os.makedirs(MODEL_DIR, exist_ok=True)
 CBM_MODEL_PATH = os.path.join(MODEL_DIR, "classifier.cbm")
 META_PATH = os.path.join(MODEL_DIR, "classifier_meta.joblib")
@@ -31,10 +34,18 @@ def load_dataset(max_records: int = 60000):
     if not os.path.exists(train_file):
         train_file = "tickets_train.jsonl"
     if not os.path.exists(train_file):
-        raise FileNotFoundError("Could not find tickets_train dataset file (.jsonl or .gz)!")
+        raise FileNotFoundError(
+            "Could not find tickets_train dataset file (.jsonl or .gz)!"
+        )
 
-    print(f"Loading data from {train_file} (sampling up to {max_records} balanced records)...")
-    opener = gzip.open(train_file, "rt", encoding="utf-8") if train_file.endswith(".gz") else open(train_file, "r", encoding="utf-8")
+    print(
+        f"Loading data from {train_file} (sampling up to {max_records} balanced records)..."
+    )
+    opener = (
+        gzip.open(train_file, "rt", encoding="utf-8")
+        if train_file.endswith(".gz")
+        else open(train_file, "r", encoding="utf-8")
+    )
 
     texts = []
     meta_features = []
@@ -53,7 +64,9 @@ def load_dataset(max_records: int = 60000):
             for ex in c.get("examples", []):
                 for _ in range(15):
                     texts.append(ex)
-                    meta_features.append([1.0 if kind == "complaint" else 0.0, 0.0, float(len(ex)), 0.0])
+                    meta_features.append(
+                        [1.0 if kind == "complaint" else 0.0, 0.0, float(len(ex)), 0.0]
+                    )
                     labels.append(code)
 
     with opener as f:
@@ -71,7 +84,11 @@ def load_dataset(max_records: int = 60000):
             else:
                 r_count += 1
 
-            player_msgs = [m.get("text", "") for m in item.get("messages", []) if m.get("role") == "player"]
+            player_msgs = [
+                m.get("text", "")
+                for m in item.get("messages", [])
+                if m.get("role") == "player"
+            ]
             raw_text = " ".join(player_msgs)
             text_norm = normalize_cp1251_kz(raw_text)
             raw_refs = str(item.get("rule_refs_raw", "") or "")
@@ -79,7 +96,9 @@ def load_dataset(max_records: int = 60000):
 
             img_cnt = float(item.get("images_count", 0) or 0)
             is_complaint = 1.0 if kind == "complaint" else 0.0
-            facts = extract_facts(item, text=text_norm, rule_refs_raw=raw_refs, images_count=int(img_cnt))
+            facts = extract_facts(
+                item, text=text_norm, rule_refs_raw=raw_refs, images_count=int(img_cnt)
+            )
             has_ev = 1.0 if facts["has_evidence"] else 0.0
             text_len = float(len(text_norm))
 
@@ -111,15 +130,15 @@ def train_and_evaluate():
 
     # Split train/val
     from sklearn.model_selection import train_test_split
+
     indices = np.arange(len(texts))
-    idx_train, idx_val = train_test_split(indices, test_size=0.15, random_state=42, stratify=y)
+    idx_train, idx_val = train_test_split(
+        indices, test_size=0.15, random_state=42, stratify=y
+    )
 
     print("\nExtracting TF-IDF text features...")
     vectorizer = TfidfVectorizer(
-        ngram_range=(1, 2),
-        max_features=12000,
-        sublinear_tf=True,
-        min_df=2
+        ngram_range=(1, 2), max_features=12000, sublinear_tf=True, min_df=2
     )
 
     X_text_train = vectorizer.fit_transform([texts[i] for i in idx_train])
@@ -139,10 +158,10 @@ def train_and_evaluate():
         iterations=300,
         learning_rate=0.15,
         depth=6,
-        loss_function='MultiClass',
+        loss_function="MultiClass",
         random_seed=42,
         thread_count=-1,
-        verbose=50
+        verbose=50,
     )
 
     t0 = time.time()
@@ -153,9 +172,9 @@ def train_and_evaluate():
     # Evaluate on internal split
     val_preds = model.predict(X_val).flatten().astype(int)
     val_acc = accuracy_score(y_val, val_preds)
-    val_f1 = f1_score(y_val, val_preds, average='macro')
+    val_f1 = f1_score(y_val, val_preds, average="macro")
     print("\n--- VALIDATION METRICS (Internal Split) ---")
-    print(f"Accuracy:  {val_acc:.4f} ({val_acc*100:.2f}%)")
+    print(f"Accuracy:  {val_acc:.4f} ({val_acc * 100:.2f}%)")
     print(f"Macro F1:  {val_f1:.4f}")
 
     # Save CatBoost model to CBM format
@@ -169,7 +188,7 @@ def train_and_evaluate():
         "id_to_class": id_to_class,
         "classes": unique_classes,
         "accuracy": val_acc,
-        "macro_f1": val_f1
+        "macro_f1": val_f1,
     }
     joblib.dump(meta, META_PATH)
     print(f"Saved metadata to: {META_PATH}")
@@ -183,19 +202,34 @@ def train_and_evaluate():
         with open("tickets_valid.jsonl", "r", encoding="utf-8") as f:
             for line in f:
                 item = json.loads(line)
-                p_msgs = [m.get("text", "") for m in item.get("messages", []) if m.get("role") == "player"]
+                p_msgs = [
+                    m.get("text", "")
+                    for m in item.get("messages", [])
+                    if m.get("role") == "player"
+                ]
                 t_norm = normalize_cp1251_kz(" ".join(p_msgs))
                 r_refs = str(item.get("rule_refs_raw", "") or "")
                 combined = f"{r_refs} {t_norm}".strip()
                 img = float(item.get("images_count", 0) or 0)
                 is_comp = 1.0 if item.get("kind") == "complaint" else 0.0
-                facts = extract_facts(item, text=t_norm, rule_refs_raw=r_refs, images_count=int(img))
+                facts = extract_facts(
+                    item, text=t_norm, rule_refs_raw=r_refs, images_count=int(img)
+                )
                 valid_texts.append(combined)
-                valid_meta.append([is_comp, img, float(len(t_norm)), 1.0 if facts["has_evidence"] else 0.0])
+                valid_meta.append(
+                    [
+                        is_comp,
+                        img,
+                        float(len(t_norm)),
+                        1.0 if facts["has_evidence"] else 0.0,
+                    ]
+                )
                 valid_ids.append(item.get("ticket_id"))
 
         X_valid_text = vectorizer.transform(valid_texts)
-        X_valid = sparse.hstack([X_valid_text, np.array(valid_meta, dtype=np.float32)]).tocsr()
+        X_valid = sparse.hstack(
+            [X_valid_text, np.array(valid_meta, dtype=np.float32)]
+        ).tocsr()
 
         # Measure latency
         t_start = time.perf_counter()
@@ -206,10 +240,12 @@ def train_and_evaluate():
         preds_idx = np.argmax(probs, axis=1)
         pred_labels = [id_to_class[i] for i in preds_idx]
 
-        print(f"Processed 1000 tickets in {total_lat_ms:.2f} ms ({avg_lat:.2f} ms/ticket)")
+        print(
+            f"Processed 1000 tickets in {total_lat_ms:.2f} ms ({avg_lat:.2f} ms/ticket)"
+        )
         print("\nTop 5 predicted categories on validation set:")
         for cat, cnt in Counter(pred_labels).most_common(5):
-            print(f"  {cat}: {cnt} ({cnt/len(valid_texts)*100:.1f}%)")
+            print(f"  {cat}: {cnt} ({cnt / len(valid_texts) * 100:.1f}%)")
 
     print("\nTraining and validation complete!")
 

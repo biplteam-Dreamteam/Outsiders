@@ -1,51 +1,167 @@
 import re
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Any
 
 CP1251_KZ_MAPPING = {
-    'ќ': 'қ', 'Ќ': 'Қ',
-    'ґ': 'ғ', 'Ґ': 'Ғ',
-    'ѕ': 'ң', 'Ѕ': 'Ң',
-    'є': 'ә', 'Є': 'Ә',
-    'ј': 'ө', 'Ј': 'Ө',
-    'ў': 'ұ', 'Ў': 'Ұ',
-    'ї': 'ү', 'Ї': 'Ү',
+    "ќ": "қ",
+    "Ќ": "Қ",
+    "ґ": "ғ",
+    "Ґ": "Ғ",
+    "ѕ": "ң",
+    "Ѕ": "Ң",
+    "є": "ә",
+    "Є": "Ә",
+    "ј": "ө",
+    "Ј": "Ө",
+    "ў": "ұ",
+    "Ў": "Ұ",
+    "ї": "ү",
+    "Ї": "Ү",
 }
 
-KK_LETTERS = set('әғқңөұүһіӘҒҚҢӨҰҮҺІ')
+KK_LETTERS = set("әғқңөұүһіӘҒҚҢӨҰҮҺІ")
 KK_WORDS = {
-    'сәлем', 'салем', 'рахмет', 'болады', 'қандай', 'кандай', 'неге', 'қалай',
-    'калай', 'болды', 'керек', 'жасау', 'өтініш', 'отиниш', 'мені', 'мени',
-    'барма', 'жоқ', 'жок', 'маған', 'маган', 'қайда', 'кайда', 'айтыңызшы',
-    'айтынызшы', 'шығар', 'шыгар', 'берші', 'берши', 'қайырлы', 'көмек', 'комек',
-    'болама', 'ойнау', 'акша', 'ақша', 'жумыс', 'жұмыс', 'үй', 'үйім', 'машина',
-    'жаза', 'шағым', 'шагым', 'ойыншы', 'дəлел', 'дәлел', 'басталды', 'кетті'
+    "сәлем",
+    "салем",
+    "рахмет",
+    "болады",
+    "қандай",
+    "кандай",
+    "неге",
+    "қалай",
+    "калай",
+    "болды",
+    "керек",
+    "жасау",
+    "өтініш",
+    "отиниш",
+    "мені",
+    "мени",
+    "барма",
+    "жоқ",
+    "жок",
+    "маған",
+    "маган",
+    "қайда",
+    "кайда",
+    "айтыңызшы",
+    "айтынызшы",
+    "шығар",
+    "шыгар",
+    "берші",
+    "берши",
+    "қайырлы",
+    "көмек",
+    "комек",
+    "болама",
+    "ойнау",
+    "акша",
+    "ақша",
+    "жумыс",
+    "жұмыс",
+    "үй",
+    "үйім",
+    "машина",
+    "жаза",
+    "шағым",
+    "шагым",
+    "ойыншы",
+    "дəлел",
+    "дәлел",
+    "басталды",
+    "кетті",
 }
 
-UZ_MARKERS = {
-    "o'", "g'", "o`", "g`", "sh", "ch", "yo", "yu", "ya"
-}
+UZ_MARKERS = {"o'", "g'", "o`", "g`", "sh", "ch", "yo", "yu", "ya"}
 UZ_WORDS = {
-    'iltimos', 'yordam', 'qanday', 'nima', 'xush', 'rahmat', 'kerak', 'bormi',
-    'qilish', 'qildim', 'salom', 'aka', 'tashab', 'bering', 'yozing', 'oldirdi',
-    'mesabab', 'qildi', 'pul', 'ish', 'oyin', 'moshin', 'nima', 'qayerda',
-    'blok', 'adminlar', 'sabab', 'haqida', 'berish', 'yordamchi', 'qanaqa'
+    "iltimos",
+    "yordam",
+    "qanday",
+    "nima",
+    "xush",
+    "rahmat",
+    "kerak",
+    "bormi",
+    "qilish",
+    "qildim",
+    "salom",
+    "aka",
+    "tashab",
+    "bering",
+    "yozing",
+    "oldirdi",
+    "mesabab",
+    "qildi",
+    "pul",
+    "ish",
+    "oyin",
+    "moshin",
+    "qayerda",
+    "blok",
+    "adminlar",
+    "sabab",
+    "haqida",
+    "berish",
+    "yordamchi",
+    "qanaqa",
 }
 
 EN_WORDS = {
-    'help', 'please', 'how', 'what', 'why', 'stuck', 'ban', 'admin', 'report',
-    'game', 'car', 'money', 'player', 'bug', 'issue', 'unban', 'hack', 'hacker',
-    'server', 'login', 'lost', 'password', 'spawn', 'kill', 'cheater', 'aimbot'
+    "help",
+    "please",
+    "how",
+    "what",
+    "why",
+    "stuck",
+    "ban",
+    "admin",
+    "report",
+    "game",
+    "car",
+    "money",
+    "player",
+    "bug",
+    "issue",
+    "unban",
+    "hack",
+    "hacker",
+    "server",
+    "login",
+    "lost",
+    "password",
+    "spawn",
+    "kill",
+    "cheater",
+    "aimbot",
 }
 
-NICKNAME_PATTERN = re.compile(r'\b[A-ZА-ЯЁ][a-zа-яё0-9]+_[A-ZА-ЯЁ][a-zа-яё0-9]+\b')
-RULE_REF_PATTERN = re.compile(r'\b\d+\.\d+(?:\.\d+)?\b')
+NICKNAME_PATTERN = re.compile(r"\b[A-ZА-ЯЁ][a-zа-яё0-9]+_[A-ZА-ЯЁ][a-zа-яё0-9]+\b")
+RULE_REF_PATTERN = re.compile(r"\b\d+\.\d+(?:\.\d+)?\b")
 EVIDENCE_PATTERNS = [
-    r'скрин', r'видео', r'фрапс', r'пруф', r'доказ', r'доки', r'запись',
-    r'<url>', r'дәлел', r'далел', r'skrin', r'video', r'proof', r'dalil',
-    r'dalillar', r'screen', r'screenshot', r'зафиксировал', r'заснял', r'снял'
+    r"скрин",
+    r"видео",
+    r"фрапс",
+    r"пруф",
+    r"доказ",
+    r"доки",
+    r"запись",
+    r"<url>",
+    r"дәлел",
+    r"далел",
+    r"skrin",
+    r"video",
+    r"proof",
+    r"dalil",
+    r"dalillar",
+    r"screen",
+    r"screenshot",
+    r"зафиксировал",
+    r"заснял",
+    r"снял",
 ]
-EVIDENCE_REGEX = re.compile('|'.join(EVIDENCE_PATTERNS), re.IGNORECASE)
-SERVER_PATTERN = re.compile(r'(?:сервер[а-я]*|server)\s*[:#№]?\s*(\d+|[a-zA-Z]+)', re.IGNORECASE)
+EVIDENCE_REGEX = re.compile("|".join(EVIDENCE_PATTERNS), re.IGNORECASE)
+SERVER_PATTERN = re.compile(
+    r"(?:сервер[а-я]*|server)\s*[:#№]?\s*(\d+|[a-zA-Z]+)", re.IGNORECASE
+)
 
 
 def normalize_cp1251_kz(text: str) -> str:
@@ -58,12 +174,12 @@ def normalize_cp1251_kz(text: str) -> str:
         res.append(CP1251_KZ_MAPPING.get(ch, ch))
     text_norm = "".join(res)
     # Normalize whitespaces
-    text_norm = re.sub(r'[\r\n\t]+', ' ', text_norm)
-    text_norm = re.sub(r'\s{2,}', ' ', text_norm).strip()
+    text_norm = re.sub(r"[\r\n\t]+", " ", text_norm)
+    text_norm = re.sub(r"\s{2,}", " ", text_norm).strip()
     return text_norm
 
 
-def detect_language(text: str, default_lang: Optional[str] = None) -> str:
+def detect_language(text: str, default_lang: str | None = None) -> str:
     """
     Быстрое мультиязычное определение языка: ru, kk, uz, en, und.
     Использует алфавитные маркеры, казахскую кириллицу, узбекскую латиницу и лексические словари.
@@ -80,7 +196,7 @@ def detect_language(text: str, default_lang: Optional[str] = None) -> str:
         return "kk"
 
     # Tokenize words
-    words = re.findall(r'[a-zA-Zа-яА-ЯёЁ\'`]+', text_lower)
+    words = re.findall(r"[a-zA-Zа-яА-ЯёЁ\'`]+", text_lower)
     if not words:
         return default_lang or "und"
 
@@ -95,8 +211,8 @@ def detect_language(text: str, default_lang: Optional[str] = None) -> str:
     if uz_score > 0:
         return "uz"
     # Check uzbek digrams in latin text
-    latin_letters = sum(1 for ch in text_lower if 'a' <= ch <= 'z')
-    cyr_letters = sum(1 for ch in text_lower if 'а' <= ch <= 'я' or ch == 'ё')
+    latin_letters = sum(1 for ch in text_lower if "a" <= ch <= "z")
+    cyr_letters = sum(1 for ch in text_lower if "а" <= ch <= "я" or ch == "ё")
 
     if latin_letters > cyr_letters:
         # Check uzbek specific digraphs like o', g', sh, ch
@@ -105,7 +221,9 @@ def detect_language(text: str, default_lang: Optional[str] = None) -> str:
                 return "uz"
         # English words check
         en_score = sum(1 for w in words if w in EN_WORDS)
-        if en_score > 0 or ("the" in word_set or "and" in word_set or "you" in word_set):
+        if en_score > 0 or (
+            "the" in word_set or "and" in word_set or "you" in word_set
+        ):
             return "en"
         # If Latin server_lang was uz/en, fallback
         if default_lang in ("uz", "en", "kk", "ru"):
@@ -121,11 +239,11 @@ def detect_language(text: str, default_lang: Optional[str] = None) -> str:
 
 
 def extract_facts(
-    ticket: Dict[str, Any],
-    text: Optional[str] = None,
-    rule_refs_raw: Optional[str] = None,
-    images_count: Optional[int] = None
-) -> Dict[str, Any]:
+    ticket: dict[str, Any],
+    text: str | None = None,
+    rule_refs_raw: str | None = None,
+    images_count: int | None = None,
+) -> dict[str, Any]:
     r"""
     Экстрактор фактов:
     - nickname (паттерны вида Name_Surname или токен <nick>)
@@ -135,13 +253,19 @@ def extract_facts(
     """
     if text is None:
         # Collect text from player messages
-        player_msgs = [m.get("text", "") for m in ticket.get("messages", []) if m.get("role") == "player"]
+        player_msgs = [
+            m.get("text", "")
+            for m in ticket.get("messages", [])
+            if m.get("role") == "player"
+        ]
         text = " ".join(player_msgs)
 
     text_norm = normalize_cp1251_kz(text)
     raw_refs = rule_refs_raw or ticket.get("rule_refs_raw", "") or ""
     raw_refs_norm = normalize_cp1251_kz(str(raw_refs))
-    img_cnt = images_count if images_count is not None else ticket.get("images_count", 0) or 0
+    img_cnt = (
+        images_count if images_count is not None else ticket.get("images_count", 0) or 0
+    )
 
     # 1. Nickname
     nick = ticket.get("reported_nick")
@@ -165,16 +289,14 @@ def extract_facts(
         refs_found.add(match.group(0))
 
     # Check GZ / ЗЗ
-    if re.search(r'\b(?:gz|гз|зз)\b', (raw_refs_norm + " " + text_norm), re.IGNORECASE):
+    if re.search(r"\b(?:gz|гз|зз)\b", (raw_refs_norm + " " + text_norm), re.IGNORECASE):
         refs_found.add("GZ")
 
     rule_refs = sorted(list(refs_found))
 
     # 3. Evidence
     has_evidence = False
-    if img_cnt > 0:
-        has_evidence = True
-    elif EVIDENCE_REGEX.search(text_norm):
+    if img_cnt > 0 or EVIDENCE_REGEX.search(text_norm):
         has_evidence = True
 
     # 4. Server
@@ -191,5 +313,5 @@ def extract_facts(
         "nickname": nick,
         "rule_refs": rule_refs,
         "has_evidence": bool(has_evidence),
-        "server": server
+        "server": server,
     }

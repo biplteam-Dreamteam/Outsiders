@@ -1,14 +1,17 @@
 import os
 import re
+from typing import Any
+
 import joblib
 import numpy as np
 from scipy import sparse
-from typing import Dict, Any, Tuple, Optional
 
-from src.preprocessor import normalize_cp1251_kz, extract_facts
+from src.preprocessor import normalize_cp1251_kz
 from src.rules_mapper import label_ticket
 
-MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models")
+MODEL_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models"
+)
 CBM_MODEL_PATH = os.path.join(MODEL_DIR, "classifier.cbm")
 META_PATH = os.path.join(MODEL_DIR, "classifier_meta.joblib")
 JOBLIB_MODEL_PATH = os.path.join(MODEL_DIR, "classifier.joblib")
@@ -27,8 +30,26 @@ TAXONOMY_RULE_ANCHORS = {
     "3.4": "complaint.admin",
 }
 
-PAYMENT_WORDS = ("донат", "donate", "оплат", "платеж", "платёж", "гк", "to'lov", "төлем", "сатып алу", "pul tushmadi")
-ACCOUNT_WORDS = ("взлом", "украли акк", "пароль сменили", "потерял доступ", "akkaunt", "hacked")
+PAYMENT_WORDS = (
+    "донат",
+    "donate",
+    "оплат",
+    "платеж",
+    "платёж",
+    "гк",
+    "to'lov",
+    "төлем",
+    "сатып алу",
+    "pul tushmadi",
+)
+ACCOUNT_WORDS = (
+    "взлом",
+    "украли акк",
+    "пароль сменили",
+    "потерял доступ",
+    "akkaunt",
+    "hacked",
+)
 HELP_WORDS = ("застрял", "вытащ", "переверн", "помогите выбраться", "текстур", "qotib")
 
 
@@ -42,7 +63,8 @@ class TicketClassifier:
     - Расчет честной вероятности (confidence)
     - При confidence < 0.55 -> needs_human = True
     """
-    def __init__(self, cbm_path: Optional[str] = None, meta_path: Optional[str] = None):
+
+    def __init__(self, cbm_path: str | None = None, meta_path: str | None = None):
         self.cbm_path = cbm_path or CBM_MODEL_PATH
         self.meta_path = meta_path or META_PATH
         self.catboost_model = None
@@ -56,6 +78,7 @@ class TicketClassifier:
         if os.path.exists(self.cbm_path) and os.path.exists(self.meta_path):
             try:
                 from catboost import CatBoostClassifier
+
                 self.catboost_model = CatBoostClassifier()
                 self.catboost_model.load_model(self.cbm_path)
                 self.meta = joblib.load(self.meta_path)
@@ -74,7 +97,9 @@ class TicketClassifier:
     def is_trained(self) -> bool:
         return self.catboost_model is not None or self.lr_model is not None
 
-    def predict(self, ticket: Dict[str, Any], text: str, has_evidence: bool = False) -> Dict[str, Any]:
+    def predict(
+        self, ticket: dict[str, Any], text: str, has_evidence: bool = False
+    ) -> dict[str, Any]:
         """
         Предсказывает категорию, приоритет и confidence.
         """
@@ -92,8 +117,12 @@ class TicketClassifier:
         confidence = 0.85
 
         # 0. Check strong taxonomy rule anchors
-        clean_raw_refs = re.findall(r'\b\d+\.\d+\b', raw_refs)
-        if clean_raw_refs and clean_raw_refs[0] in TAXONOMY_RULE_ANCHORS and kind == "complaint":
+        clean_raw_refs = re.findall(r"\b\d+\.\d+\b", raw_refs)
+        if (
+            clean_raw_refs
+            and clean_raw_refs[0] in TAXONOMY_RULE_ANCHORS
+            and kind == "complaint"
+        ):
             category = TAXONOMY_RULE_ANCHORS[clean_raw_refs[0]]
             confidence = 0.95
         elif kind == "report":
@@ -108,10 +137,16 @@ class TicketClassifier:
                 confidence = 0.95
 
         # 1. CatBoost Inference if not set by strong anchor
-        if category is None and self.catboost_model is not None and self.meta is not None:
+        if (
+            category is None
+            and self.catboost_model is not None
+            and self.meta is not None
+        ):
             try:
                 vec = self.meta["vectorizer"].transform([combined_text])
-                meta_arr = np.array([[is_complaint, img_cnt, text_len, has_ev]], dtype=np.float32)
+                meta_arr = np.array(
+                    [[is_complaint, img_cnt, text_len, has_ev]], dtype=np.float32
+                )
                 X_feat = sparse.hstack([vec, meta_arr]).tocsr()
 
                 probs = self.catboost_model.predict_proba(X_feat)[0]
@@ -122,7 +157,11 @@ class TicketClassifier:
                 category = None
 
         # 2. LogisticRegression Backup
-        if category is None and self.lr_model is not None and self.lr_vectorizer is not None:
+        if (
+            category is None
+            and self.lr_model is not None
+            and self.lr_vectorizer is not None
+        ):
             try:
                 features_text = f"__kind_{kind}__ {raw_refs} {text_norm}"
                 vec = self.lr_vectorizer.transform([features_text])
@@ -139,15 +178,27 @@ class TicketClassifier:
             confidence = 0.85
 
         # Priority calculation strictly following taxonomy.json
-        if category == "report.payment" or (category == "report.account" and any(w in text_lower for w in ["взлом", "украли", "пароль", "hacked"])) or "2.6" in raw_refs:
+        if (
+            category == "report.payment"
+            or (
+                category == "report.account"
+                and any(
+                    w in text_lower for w in ["взлом", "украли", "пароль", "hacked"]
+                )
+            )
+            or "2.6" in raw_refs
+        ):
             priority = "p0"
         elif category in ["complaint.cheat", "complaint.scam", "complaint.rmt_ads"]:
             priority = "p1"
         elif kind == "complaint" and not has_evidence:
             priority = "p3"
-        elif kind == "complaint" and category in ["complaint.insult", "complaint.dm", "complaint.admin", "complaint.other"]:
-            priority = "p2"
-        elif category == "report.complaint":
+        elif kind == "complaint" and category in [
+            "complaint.insult",
+            "complaint.dm",
+            "complaint.admin",
+            "complaint.other",
+        ] or category == "report.complaint":
             priority = "p2"
         else:
             priority = "p3"
@@ -159,5 +210,5 @@ class TicketClassifier:
             "category": category,
             "priority": priority,
             "confidence": round(confidence, 4),
-            "low_confidence_needs_human": needs_human_conf
+            "low_confidence_needs_human": needs_human_conf,
         }

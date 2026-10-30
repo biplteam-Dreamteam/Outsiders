@@ -1,19 +1,28 @@
-import os
 import sys
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 import json
 
 required_top_keys = {
-    "lang", "category", "priority", "is_spam_or_duplicate",
-    "extracted", "draft_reply", "needs_human", "confidence", "reasons"
+    "lang",
+    "category",
+    "priority",
+    "is_spam_or_duplicate",
+    "extracted",
+    "draft_reply",
+    "needs_human",
+    "confidence",
+    "reasons",
 }
 
 required_extracted_keys = {"nickname", "rule_refs", "has_evidence", "server"}
 required_draft_keys = {"lang", "text", "cited"}
 
 valid_rules = json.load(open("rules.json", encoding="utf-8"))
-valid_refs = set(p["ref"] for r in valid_rules.get("rules", []) for p in r.get("points", []))
+valid_refs = set(
+    p["ref"] for r in valid_rules.get("rules", []) for p in r.get("points", [])
+)
 
 print("Validating pred.jsonl...")
 errors = 0
@@ -50,9 +59,11 @@ with open("pred.jsonl", "r", encoding="utf-8") as f:
                 errors += 1
 
         if i < 2:
-            print(f"\n--- SAMPLE RECORD #{i+1} ---")
+            print(f"\n--- SAMPLE RECORD #{i + 1} ---")
             print(json.dumps(item, ensure_ascii=False, indent=2))
 
 print(f"\nValidation finished! Total records: {total}, Errors: {errors}")
 if errors == 0:
-    print("SUCCESS: ALL 1000 RECORDS 100% COMPLIANT WITH CASE CONTRACT AND ZERO HALLUCINATIONS!")
+    print(
+        "SUCCESS: ALL 1000 RECORDS 100% COMPLIANT WITH CASE CONTRACT AND ZERO HALLUCINATIONS!"
+    )

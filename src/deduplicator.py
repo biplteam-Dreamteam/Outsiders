@@ -1,7 +1,9 @@
 import datetime
 from collections import defaultdict
-from typing import Dict, Any, List, Optional
+from typing import Any
+
 from rapidfuzz import fuzz
+
 
 class TicketDeduplicator:
     """
@@ -11,12 +13,18 @@ class TicketDeduplicator:
     1. >= 5 тикетов от одного игрока за 1 час.
     2. Текстовое сходство (RapidFuzz ratio > 85%) с недавним тикетом того же заявителя в окне 1 часа.
     """
-    def __init__(self, time_window_seconds: int = 3600, max_tickets_per_hour: int = 5, similarity_threshold: float = 85.0):
+
+    def __init__(
+        self,
+        time_window_seconds: int = 3600,
+        max_tickets_per_hour: int = 5,
+        similarity_threshold: float = 85.0,
+    ):
         self.time_window_seconds = time_window_seconds
         self.max_tickets_per_hour = max_tickets_per_hour
         self.similarity_threshold = similarity_threshold
         # Key: reporter_hash -> list of dicts: {"ts": datetime, "text": str, "ticket_id": str}
-        self.history: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        self.history: dict[str, list[dict[str, Any]]] = defaultdict(list)
 
     def parse_timestamp(self, ts_raw: Any) -> datetime.datetime:
         if isinstance(ts_raw, datetime.datetime):
@@ -29,7 +37,7 @@ class TicketDeduplicator:
                 pass
         return datetime.datetime.now()
 
-    def check_and_update(self, ticket: Dict[str, Any], text: str) -> bool:
+    def check_and_update(self, ticket: dict[str, Any], text: str) -> bool:
         """
         Проверяет обращение на дубликат / спам и обновляет скользящую историю.
         Возвращает is_spam_or_duplicate (True/False).
@@ -69,11 +77,9 @@ class TicketDeduplicator:
                     break
 
         # Record current ticket into history
-        valid_history.append({
-            "ts": current_ts,
-            "text": text,
-            "ticket_id": ticket.get("ticket_id")
-        })
+        valid_history.append(
+            {"ts": current_ts, "text": text, "ticket_id": ticket.get("ticket_id")}
+        )
         self.history[reporter] = valid_history
 
         return is_spam_or_duplicate

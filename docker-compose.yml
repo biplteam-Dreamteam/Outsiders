@@ -1,0 +1,40 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: grand-copilot-api
+    restart: unless-stopped
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2
+    ports:
+      - "8000:8000"
+    environment:
+      - LLM_BASE_URL=http://host.docker.internal:11434/v1
+      - LLM_MODEL=qwen2.5:3b-instruct
+      - LLM_TIMEOUT=2.5
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  admin_ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: grand-copilot-admin-ui
+    restart: unless-stopped
+    command: streamlit run admin_ui.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
+    ports:
+      - "8501:8501"
+    environment:
+      - LLM_BASE_URL=http://host.docker.internal:11434/v1
+      - LLM_MODEL=qwen2.5:3b-instruct
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      api:
+        condition: service_healthy

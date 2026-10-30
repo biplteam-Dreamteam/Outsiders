@@ -1,12 +1,15 @@
 import os
 import sys
+
 sys.path.insert(0, os.path.abspath("."))
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 from fastapi.testclient import TestClient
+
 from app import app
 
 client = TestClient(app)
+
 
 def test_health():
     res = client.get("/health")
@@ -15,6 +18,7 @@ def test_health():
     assert data["status"] == "healthy"
     assert data["classifier_loaded"] is True
     print("Health check test passed!")
+
 
 def test_triage_complaint():
     payload = {
@@ -30,7 +34,7 @@ def test_triage_complaint():
         "images_count": 2,
         "messages": [
             {"role": "player", "text": "оскорбил меня и мою семью в чате, вот скрин"}
-        ]
+        ],
     }
     res = client.post("/triage", json=payload)
     assert res.status_code == 200
@@ -40,7 +44,13 @@ def test_triage_complaint():
     assert "2.1" in data["draft_reply"]["cited"]
     assert data["needs_human"] is True  # complaint with evidence
     assert data["extracted"]["nickname"] == "Ivan_Petrov"
-    print("Complaint triage test passed! Category:", data["category"], "Draft cited:", data["draft_reply"]["cited"])
+    print(
+        "Complaint triage test passed! Category:",
+        data["category"],
+        "Draft cited:",
+        data["draft_reply"]["cited"],
+    )
+
 
 def test_triage_payment_p0():
     payload = {
@@ -50,7 +60,7 @@ def test_triage_payment_p0():
         "region": "kz",
         "messages": [
             {"role": "player", "text": "оплатил гк, донат не пришел на аккаунт"}
-        ]
+        ],
     }
     res = client.post("/triage", json=payload)
     assert res.status_code == 200
@@ -58,7 +68,13 @@ def test_triage_payment_p0():
     assert data["category"] == "report.payment"
     assert data["priority"] == "p0"
     assert data["needs_human"] is True
-    print("Payment p0 test passed! Priority:", data["priority"], "Needs human:", data["needs_human"])
+    print(
+        "Payment p0 test passed! Priority:",
+        data["priority"],
+        "Needs human:",
+        data["needs_human"],
+    )
+
 
 def test_kazakh_normalization():
     payload = {
@@ -68,14 +84,18 @@ def test_kazakh_normalization():
         "region": "kz",
         "messages": [
             # cp1251 corrupted: ќ->қ, є->ә, ѕ->ң
-            {"role": "player", "text": "сєлем админ, маєан кґмек керек, ќалай жґмыс жасауєа болады"}
-        ]
+            {
+                "role": "player",
+                "text": "сєлем админ, маєан кґмек керек, ќалай жґмыс жасауєа болады",
+            }
+        ],
     }
     res = client.post("/triage", json=payload)
     assert res.status_code == 200
     data = res.json()
     assert data["lang"] == "kk"
     print("Kazakh normalization and lang detection test passed! Lang:", data["lang"])
+
 
 if __name__ == "__main__":
     test_health()

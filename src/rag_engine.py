@@ -1,53 +1,53 @@
 import json
 import os
 import re
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Any
+
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from rapidfuzz import fuzz
 
 SLANG_MAP = {
-    'дм': ['5.3', '5.4', '1.1'],
-    'dm': ['5.3', '5.4', '1.1'],
-    'deathmatch': ['5.3', '5.4'],
-    'дб': ['5.3', '5.5'],
-    'db': ['5.3', '5.5'],
-    'ск': ['5.4'],
-    'sk': ['5.4'],
-    'тк': ['5.3'],
-    'tk': ['5.3'],
-    'оск': ['2.1'],
-    'оскорбление': ['2.1'],
-    'оск род': ['2.1'],
-    'упом род': ['2.1'],
-    'мат': ['2.1'],
-    'нрп': ['5.3', '5.1'],
-    'nonrp': ['5.3', '5.1'],
-    'нонрп': ['5.3', '5.1'],
-    'уход от рп': ['5.3'],
-    'чит': ['5.2'],
-    'читы': ['5.2'],
-    'софт': ['5.2'],
-    'аим': ['5.2'],
-    'вх': ['5.2'],
-    'рванка': ['5.2'],
-    'бот': ['5.2'],
-    'кликер': ['5.2'],
-    'скам': ['4.1', '4.2'],
-    'обман': ['4.1', '4.2'],
-    'развод': ['4.1'],
-    'махинации': ['4.1'],
-    'вирты': ['4.1', '4.4'],
-    'донат': ['1.4'],
-    'взлом': ['1.4', '1.7'],
-    'реклама': ['2.3'],
-    'пиар': ['2.3'],
-    'оффтоп': ['3.1'],
-    'флуд': ['3.1'],
-    'зз': ['1.1', '1.2'],
-    'gz': ['1.1', '1.2'],
-    'зеленая зона': ['1.1', '1.2'],
-    'зелёная зона': ['1.1', '1.2'],
+    "дм": ["5.3", "5.4", "1.1"],
+    "dm": ["5.3", "5.4", "1.1"],
+    "deathmatch": ["5.3", "5.4"],
+    "дб": ["5.3", "5.5"],
+    "db": ["5.3", "5.5"],
+    "ск": ["5.4"],
+    "sk": ["5.4"],
+    "тк": ["5.3"],
+    "tk": ["5.3"],
+    "оск": ["2.1"],
+    "оскорбление": ["2.1"],
+    "оск род": ["2.1"],
+    "упом род": ["2.1"],
+    "мат": ["2.1"],
+    "нрп": ["5.3", "5.1"],
+    "nonrp": ["5.3", "5.1"],
+    "нонрп": ["5.3", "5.1"],
+    "уход от рп": ["5.3"],
+    "чит": ["5.2"],
+    "читы": ["5.2"],
+    "софт": ["5.2"],
+    "аим": ["5.2"],
+    "вх": ["5.2"],
+    "рванка": ["5.2"],
+    "бот": ["5.2"],
+    "кликер": ["5.2"],
+    "скам": ["4.1", "4.2"],
+    "обман": ["4.1", "4.2"],
+    "развод": ["4.1"],
+    "махинации": ["4.1"],
+    "вирты": ["4.1", "4.4"],
+    "донат": ["1.4"],
+    "взлом": ["1.4", "1.7"],
+    "реклама": ["2.3"],
+    "пиар": ["2.3"],
+    "оффтоп": ["3.1"],
+    "флуд": ["3.1"],
+    "зз": ["1.1", "1.2"],
+    "gz": ["1.1", "1.2"],
+    "зеленая зона": ["1.1", "1.2"],
+    "зелёная зона": ["1.1", "1.2"],
 }
 
 CATEGORY_RULES_MAP = {
@@ -60,7 +60,7 @@ CATEGORY_RULES_MAP = {
     "complaint.invalid": ["1.1", "1.2"],
     "report.help": ["3.1"],
     "report.account": ["1.4"],
-    "report.offtopic": ["3.1"]
+    "report.offtopic": ["3.1"],
 }
 
 
@@ -72,11 +72,12 @@ class RAGEngine:
     - Лексический поиск с помощью TF-IDF
     - Понимание игрового сленга и аббревиатур (дм, дб, ск, оск род, софт и др.)
     """
+
     def __init__(self, rules_path: str = "rules.json"):
         self.rules_path = rules_path
-        self.rules_dict: Dict[str, Dict[str, Any]] = {}
-        self.points_list: List[Dict[str, Any]] = []
-        self.vectorizer: Optional[TfidfVectorizer] = None
+        self.rules_dict: dict[str, dict[str, Any]] = {}
+        self.points_list: list[dict[str, Any]] = []
+        self.vectorizer: TfidfVectorizer | None = None
         self.tfidf_matrix = None
         self._load_rules()
 
@@ -101,7 +102,7 @@ class RAGEngine:
                     "section_id": section_id,
                     "section": section_title,
                     "text": text,
-                    "search_doc": f"{ref} {section_title} {text}".lower()
+                    "search_doc": f"{ref} {section_title} {text}".lower(),
                 }
                 # Keep first or best definition for ref in rules_dict
                 if ref not in self.rules_dict:
@@ -114,21 +115,21 @@ class RAGEngine:
             self.vectorizer = TfidfVectorizer(ngram_range=(1, 2), min_df=1)
             self.tfidf_matrix = self.vectorizer.fit_transform(docs)
 
-    def get_valid_rules_dict(self) -> Dict[str, Dict[str, Any]]:
+    def get_valid_rules_dict(self) -> dict[str, dict[str, Any]]:
         return self.rules_dict
 
     def retrieve(
         self,
         query: str,
-        category: Optional[str] = None,
-        extracted_refs: Optional[List[str]] = None,
-        top_k: int = 2
-    ) -> List[Dict[str, Any]]:
+        category: str | None = None,
+        extracted_refs: list[str] | None = None,
+        top_k: int = 2,
+    ) -> list[dict[str, Any]]:
         """
         Ищет наиболее релевантные пункты правил.
         Гарантирует возврат только реально существующих пунктов из rules.json.
         """
-        results: Dict[str, Dict[str, Any]] = {}
+        results: dict[str, dict[str, Any]] = {}
         query_lower = query.lower()
 
         # 1. Direct match from extracted refs
@@ -141,7 +142,7 @@ class RAGEngine:
         # 2. Slang / abbreviation matching
         for slang, target_refs in SLANG_MAP.items():
             # Check whole word match or high fuzzy similarity
-            if re.search(r'\b' + re.escape(slang) + r'\b', query_lower):
+            if re.search(r"\b" + re.escape(slang) + r"\b", query_lower):
                 for r in target_refs:
                     if r in self.rules_dict and r not in results:
                         results[r] = self.rules_dict[r]

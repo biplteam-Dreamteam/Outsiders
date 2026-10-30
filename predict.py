@@ -1,12 +1,14 @@
 import os
 import sys
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-if hasattr(sys.stderr, 'reconfigure'):
-    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+import argparse
 import json
 import time
-import argparse
+
 import numpy as np
 
 sys.path.insert(0, os.path.abspath("."))
@@ -14,10 +16,30 @@ from src.pipeline import SupportCopilotPipeline
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Grand Mobile Support Copilot Batch Inference")
-    parser.add_argument("--in", "-i", dest="input_file", default="tickets_valid.jsonl", help="Input JSONL path")
-    parser.add_argument("--out", "-o", dest="output_file", default="pred.jsonl", help="Output JSONL path")
-    parser.add_argument("--limit", "-l", type=int, default=None, help="Optional limit of tickets to process")
+    parser = argparse.ArgumentParser(
+        description="Grand Mobile Support Copilot Batch Inference"
+    )
+    parser.add_argument(
+        "--in",
+        "-i",
+        dest="input_file",
+        default="tickets_valid.jsonl",
+        help="Input JSONL path",
+    )
+    parser.add_argument(
+        "--out",
+        "-o",
+        dest="output_file",
+        default="pred.jsonl",
+        help="Output JSONL path",
+    )
+    parser.add_argument(
+        "--limit",
+        "-l",
+        type=int,
+        default=None,
+        help="Optional limit of tickets to process",
+    )
     return parser.parse_args()
 
 
@@ -44,7 +66,10 @@ def main():
     count = 0
     start_total_time = time.time()
 
-    with open(input_file, "r", encoding="utf-8") as in_f, open(output_file, "w", encoding="utf-8") as out_f:
+    with (
+        open(input_file, "r", encoding="utf-8") as in_f,
+        open(output_file, "w", encoding="utf-8") as out_f,
+    ):
         for line in in_f:
             line_str = line.strip()
             if not line_str:
@@ -85,7 +110,9 @@ def main():
     print(f"• 95th Percentile (p95):   {p95_latency:.2f} ms")
     print(f"• 99th Percentile (p99):   {p99_latency:.2f} ms")
     print("\n💰 Cost Estimation:")
-    print(f"• Local Inference (Qwen2.5 / Fast RAG): ${total_cost:.4f} ($0.00 / 1000 tickets)")
+    print(
+        f"• Local Inference (Qwen2.5 / Fast RAG): ${total_cost:.4f} ($0.00 / 1000 tickets)"
+    )
     print(f"• File saved to:           {output_file}")
     print("=" * 65)
 
