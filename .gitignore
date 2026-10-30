@@ -3,6 +3,8 @@
 *.gz
 *.cbm
 *.pkl
+*.csv
+data/*.csv
 pred*.jsonl
 data/rlhf.jsonl
 data/admin_feedback_rlhf.jsonl

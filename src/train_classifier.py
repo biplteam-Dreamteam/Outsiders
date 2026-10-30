@@ -1,254 +1,202 @@
-import gzip
-import json
 import os
 import sys
 import time
-from collections import Counter
 
 import joblib
 import numpy as np
+import pandas as pd
 from catboost import CatBoostClassifier
 from scipy import sparse
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics import accuracy_score, f1_score
+from sklearn.model_selection import train_test_split
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-if hasattr(sys.stderr, "reconfigure"):
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-from src.preprocessor import extract_facts, normalize_cp1251_kz
-from src.rules_mapper import label_ticket
-
+DATA_PATH = os.path.join("data", "train_labeled.csv")
 MODEL_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models"
 )
 os.makedirs(MODEL_DIR, exist_ok=True)
-CBM_MODEL_PATH = os.path.join(MODEL_DIR, "classifier.cbm")
+
+CAT_MODEL_PATH = os.path.join(MODEL_DIR, "category_model.cbm")
+PRIO_MODEL_PATH = os.path.join(MODEL_DIR, "priority_model.cbm")
+LEGACY_MODEL_PATH = os.path.join(MODEL_DIR, "classifier.cbm")
 META_PATH = os.path.join(MODEL_DIR, "classifier_meta.joblib")
 
 
-def load_dataset(max_records: int = 60000):
-    train_file = "tickets_train.jsonl.gz"
-    if not os.path.exists(train_file):
-        train_file = "tickets_train.jsonl"
-    if not os.path.exists(train_file):
+def train_models():
+    print("=" * 72)
+    print("🔥 TRAINING CATBOOST CLASSIFIERS (CATEGORY & PRIORITY)")
+    print("=" * 72)
+
+    if not os.path.exists(DATA_PATH):
         raise FileNotFoundError(
-            "Could not find tickets_train dataset file (.jsonl or .gz)!"
+            f"Labeled data not found at {DATA_PATH}. Run src/prepare_dataset.py first!"
         )
 
-    print(
-        f"Loading data from {train_file} (sampling up to {max_records} balanced records)..."
+    # 1. Load Data
+    t0 = time.time()
+    print(f"Loading {DATA_PATH}...")
+    df = pd.read_csv(
+        DATA_PATH,
+        dtype={
+            "ticket_id": str,
+            "kind": str,
+            "text": str,
+            "images_count": int,
+            "category": str,
+            "priority": str,
+        },
     )
-    opener = (
-        gzip.open(train_file, "rt", encoding="utf-8")
-        if train_file.endswith(".gz")
-        else open(train_file, "r", encoding="utf-8")
-    )
+    df["text"] = df["text"].fillna("")
+    df["images_count"] = df["images_count"].fillna(0).astype(int)
+    print(f"Loaded {len(df)} samples in {time.time() - t0:.2f}s.")
 
-    texts = []
-    meta_features = []
-    labels = []
-
-    c_count = 0
-    r_count = 0
-    target_each = max_records // 2
-
-    # Include seed taxonomy examples
-    if os.path.exists("taxonomy.json"):
-        tax = json.load(open("taxonomy.json", encoding="utf-8"))
-        for c in tax.get("categories", []):
-            code = c["code"]
-            kind = c.get("kind", "complaint")
-            for ex in c.get("examples", []):
-                for _ in range(15):
-                    texts.append(ex)
-                    meta_features.append(
-                        [1.0 if kind == "complaint" else 0.0, 0.0, float(len(ex)), 0.0]
-                    )
-                    labels.append(code)
-
-    with opener as f:
-        for line in f:
-            item = json.loads(line)
-            kind = item.get("kind", "complaint")
-
-            if kind == "complaint" and c_count >= target_each:
-                continue
-            if kind == "report" and r_count >= target_each:
-                continue
-
-            if kind == "complaint":
-                c_count += 1
-            else:
-                r_count += 1
-
-            player_msgs = [
-                m.get("text", "")
-                for m in item.get("messages", [])
-                if m.get("role") == "player"
-            ]
-            raw_text = " ".join(player_msgs)
-            text_norm = normalize_cp1251_kz(raw_text)
-            raw_refs = str(item.get("rule_refs_raw", "") or "")
-            combined_text = f"{raw_refs} {text_norm}".strip()
-
-            img_cnt = float(item.get("images_count", 0) or 0)
-            is_complaint = 1.0 if kind == "complaint" else 0.0
-            facts = extract_facts(
-                item, text=text_norm, rule_refs_raw=raw_refs, images_count=int(img_cnt)
-            )
-            has_ev = 1.0 if facts["has_evidence"] else 0.0
-            text_len = float(len(text_norm))
-
-            cat, _ = label_ticket(item, text_norm)
-
-            texts.append(combined_text)
-            meta_features.append([is_complaint, img_cnt, text_len, has_ev])
-            labels.append(cat)
-
-            if c_count >= target_each and r_count >= target_each:
-                break
-
-    print(f"Loaded {len(texts)} samples (complaints: {c_count}, reports: {r_count})")
-    return texts, np.array(meta_features, dtype=np.float32), labels
-
-
-def train_and_evaluate():
-    print("=" * 65)
-    print("🐱 Training CatBoost Multilingual Classifier on Grand Mobile Train")
-    print("=" * 65)
-
-    texts, meta_feats, labels = load_dataset(max_records=50000)
-
-    # Convert string labels to integer classes
-    unique_classes = sorted(list(set(labels)))
-    class_to_id = {cls_name: idx for idx, cls_name in enumerate(unique_classes)}
-    id_to_class = {idx: cls_name for cls_name, idx in class_to_id.items()}
-    y = np.array([class_to_id[l] for l in labels], dtype=np.int32)
-
-    # Split train/val
-    from sklearn.model_selection import train_test_split
-
-    indices = np.arange(len(texts))
-    idx_train, idx_val = train_test_split(
-        indices, test_size=0.15, random_state=42, stratify=y
-    )
-
-    print("\nExtracting TF-IDF text features...")
+    # 2. Text Feature Extraction: char_wb (3, 5)
+    print("\nExtracting TF-IDF char_wb (3, 5) n-grams...")
+    t_tfidf = time.time()
     vectorizer = TfidfVectorizer(
-        ngram_range=(1, 2), max_features=12000, sublinear_tf=True, min_df=2
+        analyzer="char_wb",
+        ngram_range=(3, 5),
+        max_features=25000,
+        min_df=3,
+        sublinear_tf=True,
+    )
+    X_tfidf = vectorizer.fit_transform(df["text"])
+    print(f"TF-IDF Matrix shape: {X_tfidf.shape} in {time.time() - t_tfidf:.2f}s.")
+
+    # 3. Dense / Metadata Features
+    is_complaint = (df["kind"] == "complaint").astype(float).values.reshape(-1, 1)
+    images_cnt = df["images_count"].values.reshape(-1, 1).astype(float)
+    text_len = df["text"].str.len().values.reshape(-1, 1).astype(float)
+    X_dense = np.hstack([is_complaint, images_cnt, text_len])
+    X_all = sparse.hstack([X_tfidf, sparse.csr_matrix(X_dense)]).tocsr()
+    print(f"Combined Feature Matrix shape: {X_all.shape}")
+
+    # 4. Target Encodings
+    cat_unique = sorted(df["category"].unique())
+    prio_unique = sorted(df["priority"].unique())
+
+    cat2id = {c: i for i, c in enumerate(cat_unique)}
+    id2cat = {i: c for i, c in enumerate(cat_unique)}
+    prio2id = {p: i for i, p in enumerate(prio_unique)}
+    id2prio = {i: p for i, p in enumerate(prio_unique)}
+
+    y_cat = df["category"].map(cat2id).values
+    y_prio = df["priority"].map(prio2id).values
+
+    # Train / Test Split
+    print("\nSplitting into train/test sets (85% train / 15% validation)...")
+    idx_train, idx_test = train_test_split(
+        np.arange(len(df)), test_size=0.15, random_state=42, stratify=y_cat
     )
 
-    X_text_train = vectorizer.fit_transform([texts[i] for i in idx_train])
-    X_text_val = vectorizer.transform([texts[i] for i in idx_val])
+    X_train, X_test = X_all[idx_train], X_all[idx_test]
+    y_cat_train, y_cat_test = y_cat[idx_train], y_cat[idx_test]
+    y_prio_train, y_prio_test = y_prio[idx_train], y_prio[idx_test]
+    print(f"Train samples: {X_train.shape[0]} | Validation samples: {X_test.shape[0]}")
 
-    # Combine text sparse matrix with metadata features
-    X_train = sparse.hstack([X_text_train, meta_feats[idx_train]]).tocsr()
-    X_val = sparse.hstack([X_text_val, meta_feats[idx_val]]).tocsr()
-    y_train = y[idx_train]
-    y_val = y[idx_val]
-
-    print(f"Feature matrix shape: {X_train.shape}")
-    print(f"Classes ({len(unique_classes)}): {unique_classes}")
-
-    print("\nInitializing CatBoostClassifier...")
-    model = CatBoostClassifier(
-        iterations=300,
+    # =========================================================
+    # 5. Train Model 1: Category Classifier
+    # =========================================================
+    print("\n" + "=" * 60)
+    print("🚀 Training CatBoost for CATEGORY (14 classes)...")
+    print("=" * 60)
+    t_cat = time.time()
+    cat_model = CatBoostClassifier(
+        iterations=350,
         learning_rate=0.15,
         depth=6,
         loss_function="MultiClass",
         random_seed=42,
         thread_count=-1,
-        verbose=50,
+        verbose=100,
     )
+    cat_model.fit(
+        X_train, y_cat_train, eval_set=(X_test, y_cat_test), early_stopping_rounds=30
+    )
+    t_cat_train = time.time() - t_cat
+    print(f"Category model training finished in {t_cat_train:.2f}s.")
 
-    t0 = time.time()
-    model.fit(X_train, y_train, eval_set=(X_val, y_val), early_stopping_rounds=30)
-    dur = time.time() - t0
-    print(f"\nCatBoost model trained in {dur:.2f}s!")
+    # Evaluate Category
+    y_cat_pred = cat_model.predict(X_test).ravel()
+    cat_acc = accuracy_score(y_cat_test, y_cat_pred)
+    cat_macro_f1 = f1_score(y_cat_test, y_cat_pred, average="macro")
+    print("\n📊 Category Model Validation Results:")
+    print(f"   Accuracy: {cat_acc * 100:.2f}%")
+    print(f"   Macro-F1: {cat_macro_f1:.4f}")
 
-    # Evaluate on internal split
-    val_preds = model.predict(X_val).flatten().astype(int)
-    val_acc = accuracy_score(y_val, val_preds)
-    val_f1 = f1_score(y_val, val_preds, average="macro")
-    print("\n--- VALIDATION METRICS (Internal Split) ---")
-    print(f"Accuracy:  {val_acc:.4f} ({val_acc * 100:.2f}%)")
-    print(f"Macro F1:  {val_f1:.4f}")
+    # =========================================================
+    # 6. Train Model 2: Priority Classifier
+    # =========================================================
+    print("\n" + "=" * 60)
+    print("🚀 Training CatBoost for PRIORITY (4 classes: p0..p3)...")
+    print("=" * 60)
+    t_prio = time.time()
+    prio_model = CatBoostClassifier(
+        iterations=250,
+        learning_rate=0.15,
+        depth=5,
+        loss_function="MultiClass",
+        random_seed=42,
+        thread_count=-1,
+        verbose=100,
+    )
+    prio_model.fit(
+        X_train, y_prio_train, eval_set=(X_test, y_prio_test), early_stopping_rounds=25
+    )
+    t_prio_train = time.time() - t_prio
+    print(f"Priority model training finished in {t_prio_train:.2f}s.")
 
-    # Save CatBoost model to CBM format
-    model.save_model(CBM_MODEL_PATH)
-    print(f"\nSaved CatBoost model to: {CBM_MODEL_PATH}")
+    # Evaluate Priority
+    y_prio_pred = prio_model.predict(X_test).ravel()
+    prio_acc = accuracy_score(y_prio_test, y_prio_pred)
+    prio_macro_f1 = f1_score(y_prio_test, y_prio_pred, average="macro")
+    print("\n📊 Priority Model Validation Results:")
+    print(f"   Accuracy: {prio_acc * 100:.2f}%")
+    print(f"   Macro-F1: {prio_macro_f1:.4f}")
 
-    # Save Vectorizer and metadata
-    meta = {
+    # =========================================================
+    # 7. Save Models and Metadata
+    # =========================================================
+    print("\n" + "=" * 60)
+    print("💾 Saving trained models and vectorizer to models/...")
+    print("=" * 60)
+    cat_model.save_model(CAT_MODEL_PATH)
+    cat_model.save_model(
+        LEGACY_MODEL_PATH
+    )  # Maintain backward compatibility with classifier.cbm
+    prio_model.save_model(PRIO_MODEL_PATH)
+
+    meta_payload = {
         "vectorizer": vectorizer,
-        "class_to_id": class_to_id,
-        "id_to_class": id_to_class,
-        "classes": unique_classes,
-        "accuracy": val_acc,
-        "macro_f1": val_f1,
+        "cat_classes": cat_unique,
+        "cat2id": cat2id,
+        "id2cat": id2cat,
+        "prio_classes": prio_unique,
+        "prio2id": prio2id,
+        "id2prio": id2prio,
+        # backward compatibility keys for legacy classifier loader
+        "id_to_class": id2cat,
+        "class_to_id": cat2id,
+        "classes": cat_unique,
+        "trained_at": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "metrics": {
+            "category_accuracy": float(cat_acc),
+            "category_macro_f1": float(cat_macro_f1),
+            "priority_accuracy": float(prio_acc),
+            "priority_macro_f1": float(prio_macro_f1),
+        },
     }
-    joblib.dump(meta, META_PATH)
-    print(f"Saved metadata to: {META_PATH}")
-
-    # Evaluate on tickets_valid.jsonl
-    if os.path.exists("tickets_valid.jsonl"):
-        print("\nEvaluating on official tickets_valid.jsonl (1000 items)...")
-        valid_texts = []
-        valid_meta = []
-        valid_ids = []
-        with open("tickets_valid.jsonl", "r", encoding="utf-8") as f:
-            for line in f:
-                item = json.loads(line)
-                p_msgs = [
-                    m.get("text", "")
-                    for m in item.get("messages", [])
-                    if m.get("role") == "player"
-                ]
-                t_norm = normalize_cp1251_kz(" ".join(p_msgs))
-                r_refs = str(item.get("rule_refs_raw", "") or "")
-                combined = f"{r_refs} {t_norm}".strip()
-                img = float(item.get("images_count", 0) or 0)
-                is_comp = 1.0 if item.get("kind") == "complaint" else 0.0
-                facts = extract_facts(
-                    item, text=t_norm, rule_refs_raw=r_refs, images_count=int(img)
-                )
-                valid_texts.append(combined)
-                valid_meta.append(
-                    [
-                        is_comp,
-                        img,
-                        float(len(t_norm)),
-                        1.0 if facts["has_evidence"] else 0.0,
-                    ]
-                )
-                valid_ids.append(item.get("ticket_id"))
-
-        X_valid_text = vectorizer.transform(valid_texts)
-        X_valid = sparse.hstack(
-            [X_valid_text, np.array(valid_meta, dtype=np.float32)]
-        ).tocsr()
-
-        # Measure latency
-        t_start = time.perf_counter()
-        probs = model.predict_proba(X_valid)
-        total_lat_ms = (time.perf_counter() - t_start) * 1000.0
-        avg_lat = total_lat_ms / len(valid_texts)
-
-        preds_idx = np.argmax(probs, axis=1)
-        pred_labels = [id_to_class[i] for i in preds_idx]
-
-        print(
-            f"Processed 1000 tickets in {total_lat_ms:.2f} ms ({avg_lat:.2f} ms/ticket)"
-        )
-        print("\nTop 5 predicted categories on validation set:")
-        for cat, cnt in Counter(pred_labels).most_common(5):
-            print(f"  {cat}: {cnt} ({cnt / len(valid_texts) * 100:.1f}%)")
-
-    print("\nTraining and validation complete!")
+    joblib.dump(meta_payload, META_PATH)
+    print(f"Saved category model to: {CAT_MODEL_PATH}")
+    print(f"Saved priority model to: {PRIO_MODEL_PATH}")
+    print(f"Saved metadata to:       {META_PATH}")
+    print(f"Total training pipeline completed in {time.time() - t0:.2f}s.")
+    print("=" * 72)
 
 
 if __name__ == "__main__":
-    train_and_evaluate()
+    train_models()
