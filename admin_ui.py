@@ -14,7 +14,8 @@ from src.llm_client import LLMClient
 from src.preprocessor import detect_language, extract_facts, normalize_cp1251_kz
 from src.rag_engine import RAGEngine
 
-FEEDBACK_FILE = os.path.join("data", "admin_feedback_rlhf.jsonl")
+FEEDBACK_FILE = os.path.join("data", "rlhf.jsonl")
+FEEDBACK_FILE_ALT = os.path.join("data", "admin_feedback_rlhf.jsonl")
 os.makedirs("data", exist_ok=True)
 
 st.set_page_config(
@@ -106,8 +107,9 @@ def triage_ticket_sync(ticket: dict) -> dict:
 
 
 def save_feedback(record: dict):
-    with open(FEEDBACK_FILE, "a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    for fpath in (FEEDBACK_FILE, FEEDBACK_FILE_ALT):
+        with open(fpath, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 # UI Header

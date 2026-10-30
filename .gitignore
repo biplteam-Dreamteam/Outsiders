@@ -4,6 +4,7 @@
 *.cbm
 *.pkl
 pred*.jsonl
+data/rlhf.jsonl
 data/admin_feedback_rlhf.jsonl
 
 # Models & Cache

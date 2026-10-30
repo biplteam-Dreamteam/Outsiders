@@ -264,7 +264,9 @@ def extract_facts(
     raw_refs = rule_refs_raw or ticket.get("rule_refs_raw", "") or ""
     raw_refs_norm = normalize_cp1251_kz(str(raw_refs))
     img_cnt = (
-        images_count if images_count is not None else ticket.get("images_count", 0) or 0
+        images_count
+        if images_count is not None
+        else (ticket.get("images_count", 0) or ticket.get("attachments", 0) or 0)
     )
 
     # 1. Nickname
@@ -292,9 +294,9 @@ def extract_facts(
     if re.search(r"\b(?:gz|гз|зз)\b", (raw_refs_norm + " " + text_norm), re.IGNORECASE):
         refs_found.add("GZ")
 
-    rule_refs = sorted(list(refs_found))
+    rule_refs = sorted(refs_found)
 
-    # 3. Evidence
+    # 3. Evidence (images_count > 0, attachments > 0, or keywords)
     has_evidence = False
     if img_cnt > 0 or EVIDENCE_REGEX.search(text_norm):
         has_evidence = True

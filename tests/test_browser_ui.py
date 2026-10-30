@@ -1,9 +1,7 @@
 import os
-import sys
 import subprocess
-import time
+import sys
 import urllib.request
-import json
 
 CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 SCREENSHOT_PATH = os.path.abspath("admin_ui_screenshot.png")
@@ -38,7 +36,7 @@ if os.path.exists(CHROME_PATH):
         "--disable-gpu",
         f"--screenshot={SCREENSHOT_PATH}",
         "--window-size=1440,900",
-        URL
+        URL,
     ]
     res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
     if os.path.exists(SCREENSHOT_PATH):

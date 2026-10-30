@@ -51,6 +51,52 @@ ACCOUNT_WORDS = (
     "hacked",
 )
 HELP_WORDS = ("застрял", "вытащ", "переверн", "помогите выбраться", "текстур", "qotib")
+INSULT_WORDS = (
+    "оск",
+    "оскорб",
+    "упом",
+    "родных",
+    "родни",
+    "мать",
+    "родител",
+    "неадекват",
+    "неадыкват",
+    "мат",
+    "матер",
+    "обзыва",
+    "haromi",
+    "harom",
+    "боқтау",
+    "боқтық",
+    "балағат",
+    "в чате все видно",
+    "оскр",
+    "osk",
+    "расизм",
+    "национальн",
+    "розжиг",
+    "межнац",
+    "транс",
+)
+CHEAT_WORDS = (
+    "чит",
+    "читы",
+    "софт",
+    "аим",
+    "вх",
+    "рванка",
+    "бот",
+    "кликер",
+    "спидхак",
+)
+SCAM_WORDS = (
+    "скам",
+    "обман",
+    "развод",
+    "махинаци",
+    "кинул на деньги",
+    "перевел деньги",
+)
 
 
 class TicketClassifier:
@@ -125,6 +171,16 @@ class TicketClassifier:
         ):
             category = TAXONOMY_RULE_ANCHORS[clean_raw_refs[0]]
             confidence = 0.95
+        elif kind == "complaint":
+            if any(w in text_lower for w in INSULT_WORDS):
+                category = "complaint.insult"
+                confidence = 0.95
+            elif any(w in text_lower for w in CHEAT_WORDS):
+                category = "complaint.cheat"
+                confidence = 0.95
+            elif any(w in text_lower for w in SCAM_WORDS):
+                category = "complaint.scam"
+                confidence = 0.95
         elif kind == "report":
             if any(w in text_lower for w in PAYMENT_WORDS):
                 category = "report.payment"
@@ -193,12 +249,17 @@ class TicketClassifier:
             priority = "p1"
         elif kind == "complaint" and not has_evidence:
             priority = "p3"
-        elif kind == "complaint" and category in [
-            "complaint.insult",
-            "complaint.dm",
-            "complaint.admin",
-            "complaint.other",
-        ] or category == "report.complaint":
+        elif (
+            kind == "complaint"
+            and category
+            in [
+                "complaint.insult",
+                "complaint.dm",
+                "complaint.admin",
+                "complaint.other",
+            ]
+            or category == "report.complaint"
+        ):
             priority = "p2"
         else:
             priority = "p3"

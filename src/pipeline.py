@@ -22,9 +22,7 @@ class SupportCopilotPipeline:
     - Пост-санитайзинг от галлюцинаций правил
     """
 
-    def __init__(
-        self, rules_path: str = "rules.json", model_path: str | None = None
-    ):
+    def __init__(self, rules_path: str = "rules.json", model_path: str | None = None):
         self.classifier = TicketClassifier(model_path)
         self.rag = RAGEngine(rules_path)
         self.llm = LLMClient()
@@ -75,10 +73,10 @@ class SupportCopilotPipeline:
 
         # 7. RAG Engine
         rules = self.rag.retrieve(
-            clean_text,
+            clean_text + " " + str(ticket.get("rule_refs_raw", "") or ""),
             category=category,
             extracted_refs=extracted["rule_refs"],
-            top_k=2,
+            top_k=4,
         )
 
         # 8. Draft reply generation (LLM with instant Fallback)
@@ -156,10 +154,10 @@ class SupportCopilotPipeline:
 
         # 7. RAG Engine
         rules = self.rag.retrieve(
-            clean_text,
+            clean_text + " " + str(ticket.get("rule_refs_raw", "") or ""),
             category=category,
             extracted_refs=extracted["rule_refs"],
-            top_k=2,
+            top_k=4,
         )
 
         # 8. Draft reply generation (Instant Fallback generator)

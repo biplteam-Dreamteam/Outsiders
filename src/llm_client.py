@@ -104,7 +104,10 @@ class LLMClient:
             rule_text = top_rule.get("text", "").strip()
             if len(rule_text) > 160:
                 rule_text = rule_text[:157] + "..."
-            cited.append(ref)
+            for r in retrieved_rules:
+                r_ref = str(r.get("ref", "")).strip()
+                if r_ref and r_ref not in cited:
+                    cited.append(r_ref)
             text = tmpl["with_rule"].format(nick=nick, ref=ref, text=rule_text)
 
         # Case 2: Appeal / admin complaint

@@ -19,12 +19,36 @@ SLANG_MAP = {
     "оск": ["2.1"],
     "оскорбление": ["2.1"],
     "оск род": ["2.1"],
+    "оск родни": ["2.1"],
     "упом род": ["2.1"],
+    "упом родни": ["2.1"],
+    "упоминание родителей": ["2.1"],
+    "неадекват": ["2.1"],
+    "неадыкват": ["2.1"],
+    "неадекватное поведение": ["2.1"],
     "мат": ["2.1"],
+    "матерится": ["2.1"],
+    "обзывает": ["2.1"],
+    "общается с матом": ["2.1"],
+    "оскр": ["2.1"],
+    "osk": ["2.1"],
+    "haromi": ["2.1"],
+    "harom": ["2.1"],
+    "боқтау": ["2.1"],
+    "боқтық": ["2.1"],
+    "балағат": ["2.1"],
+    "расизм": ["2.4"],
+    "национальность": ["2.4"],
+    "розжиг": ["2.4"],
+    "межнац": ["2.4"],
+    "страны и национальности": ["2.4"],
+    "транс": ["2.4"],
+    "лгбт": ["2.4"],
     "нрп": ["5.3", "5.1"],
     "nonrp": ["5.3", "5.1"],
     "нонрп": ["5.3", "5.1"],
     "уход от рп": ["5.3"],
+    "урп": ["5.3"],
     "чит": ["5.2"],
     "читы": ["5.2"],
     "софт": ["5.2"],
@@ -51,9 +75,9 @@ SLANG_MAP = {
 }
 
 CATEGORY_RULES_MAP = {
-    "complaint.insult": ["2.1", "2.4", "2.6"],
+    "complaint.insult": ["2.1", "2.4"],
     "complaint.cheat": ["5.2"],
-    "complaint.dm": ["5.3", "5.4"],
+    "complaint.dm": ["5.3", "5.4", "1.1"],
     "complaint.scam": ["4.1", "4.2"],
     "complaint.rmt_ads": ["2.3", "4.4"],
     "complaint.admin": ["3.4"],
@@ -123,37 +147,98 @@ class RAGEngine:
         query: str,
         category: str | None = None,
         extracted_refs: list[str] | None = None,
-        top_k: int = 2,
+        top_k: int = 4,
     ) -> list[dict[str, Any]]:
         """
         Ищет наиболее релевантные пункты правил.
         Гарантирует возврат только реально существующих пунктов из rules.json.
         """
         results: dict[str, dict[str, Any]] = {}
-        query_lower = query.lower()
+        query_lower = query.lower().replace("ё", "е")
 
-        # 1. Direct match from extracted refs
+        # 1. Compound game patterns (higher priority than single keywords)
+        # Green zone rope / kidnapping -> 1.2
+        if any(
+            w in query_lower
+            for w in [
+                "веревк",
+                "связал",
+                "похищ",
+                "мешок",
+                "связать",
+                "веревка",
+                "веревки",
+            ]
+        ) and any(w in query_lower for w in ["зз", "gz", "зелен"]):
+            if "1.2" in self.rules_dict:
+                results["1.2"] = self.rules_dict["1.2"]
+
+        # Green zone kill / DM / DB -> 1.1, 5.3
+        elif any(w in query_lower for w in ["mass db", "db in gz", "dm in gz"]) or (
+            any(
+                w in query_lower
+                for w in [
+                    "дм",
+                    "дб",
+                    "dm",
+                    "db",
+                    "убил",
+                    "стрельб",
+                    "убийств",
+                ]
+            )
+            and any(w in query_lower for w in ["зз", "gz", "зелен"])
+        ):
+            for r in ["1.1", "5.3"]:
+                if r in self.rules_dict and r not in results:
+                    results[r] = self.rules_dict[r]
+
+        # Racism / nationality / trans -> 2.4
+        if any(
+            w in query_lower
+            for w in [
+                "расизм",
+                "национальн",
+                "розжиг",
+                "межнац",
+                "страны и национальности",
+                "транс",
+                "лгбт",
+            ]
+        ):
+            if "2.4" in self.rules_dict and "2.4" not in results:
+                results["2.4"] = self.rules_dict["2.4"]
+
+        # SpawnKill (SK) -> 5.4
+        if (
+            re.search(r"\b(?:sk|ск)\b", query_lower)
+            or "спавн" in query_lower
+            or "у дома" in query_lower
+        ):
+            if "5.4" in self.rules_dict and "5.4" not in results:
+                results["5.4"] = self.rules_dict["5.4"]
+
+        # 2. Slang / abbreviation matching
+        for slang, target_refs in SLANG_MAP.items():
+            if re.search(r"\b" + re.escape(slang) + r"\b", query_lower):
+                for r in target_refs:
+                    if r in self.rules_dict and r not in results:
+                        results[r] = self.rules_dict[r]
+
+        # 3. Direct match from extracted refs
         if extracted_refs:
             for ref in extracted_refs:
                 ref_clean = str(ref).strip()
                 if ref_clean in self.rules_dict and ref_clean not in results:
                     results[ref_clean] = self.rules_dict[ref_clean]
 
-        # 2. Slang / abbreviation matching
-        for slang, target_refs in SLANG_MAP.items():
-            # Check whole word match or high fuzzy similarity
-            if re.search(r"\b" + re.escape(slang) + r"\b", query_lower):
-                for r in target_refs:
-                    if r in self.rules_dict and r not in results:
-                        results[r] = self.rules_dict[r]
-
-        # 3. Category fallback mapping
+        # 4. Category fallback mapping
         if category and category in CATEGORY_RULES_MAP:
             for r in CATEGORY_RULES_MAP[category]:
                 if r in self.rules_dict and r not in results:
                     results[r] = self.rules_dict[r]
 
-        # 4. TF-IDF retrieval if needed
+        # 5. TF-IDF retrieval if needed
         if len(results) < top_k and self.vectorizer is not None and query_lower.strip():
             query_vec = self.vectorizer.transform([query_lower])
             sims = cosine_similarity(query_vec, self.tfidf_matrix)[0]

@@ -1,7 +1,7 @@
 IN ?= tickets_valid.jsonl
 OUT ?= pred.jsonl
 
-.PHONY: all train predict run ui cluster docker-build docker-up docker-down test lint format help
+.PHONY: all train predict run ui cluster docker-build docker-up docker-down test calibrate lint format help
 
 all: predict
 
@@ -13,6 +13,7 @@ help:
 	@echo "  make train                                 : Train CatBoost classifier on train dataset"
 	@echo "  make cluster                               : Run template clustering (Bonus 2)"
 	@echo "  make test                                  : Run test suite"
+	@echo "  make calibrate                             : Run 50-ticket strict calibration"
 	@echo "  make docker-build                          : Build Docker images"
 	@echo "  make docker-up                             : Start services in Docker containers"
 	@echo "  make docker-down                           : Stop Docker containers"
@@ -33,9 +34,13 @@ train:
 cluster:
 	python src/template_clustering.py
 
+calibrate:
+	python calibrate_pipeline.py
+
 test:
 	python tests/test_contract.py
 	python tests/test_api.py
+	python calibrate_pipeline.py
 
 docker-build:
 	docker compose build
