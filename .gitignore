@@ -1,0 +1,29 @@
+# Data files
+*tickets*.jsonl*
+*.gz
+*.cbm
+*.pkl
+pred*.jsonl
+data/admin_feedback_rlhf.jsonl
+
+# Models & Cache
+models/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment
+.env
+.venv/
+env/
+venv/
+ENV/
+
+# System / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
