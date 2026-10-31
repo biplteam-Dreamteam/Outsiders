@@ -1,32 +1,65 @@
 IN ?= tickets_valid.jsonl
 OUT ?= pred.jsonl
 
-.PHONY: all build predict run benchmark docker-build docker-up docker-down clean help
+.PHONY: all prepare train predict run ui cluster docker-build docker-up docker-down test calibrate lint format help
 
 all: predict
 
 help:
-	@echo "Grand Mobile Support Copilot — 100% Native C++20 HFT Server"
-	@echo "  make build                                 : Build C++ binaries (Release -O3 -flto)"
-	@echo "  make predict IN=<in.jsonl> OUT=<out.jsonl> : Run high-speed C++ batch prediction"
-	@echo "  make run                                   : Start C++ Crow REST API server (port 8000)"
-	@echo "  make benchmark                             : Run native C++ benchmark tool"
-	@echo "  make docker-build                          : Build multi-stage C++ Docker image"
-	@echo "  make docker-up                             : Start services via docker-compose"
-	@echo "  make docker-down                           : Stop containers"
-	@echo "  make clean                                 : Clean build artifacts"
-
-build:
-	cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
+	@echo "Grand Mobile Support Copilot — Command List:"
+	@echo "  make predict IN=<in.jsonl> OUT=<out.jsonl> : Run batch inference"
+	@echo "  make run                                   : Start FastAPI server (port 8000)"
+	@echo "  make ui                                    : Start Streamlit Admin UI (port 8501)"
+	@echo "  make prepare                               : Run pseudo-labeling on train dataset"
+	@echo "  make train                                 : Train CatBoost classifier on train dataset"
+	@echo "  make cluster                               : Run template clustering (Bonus 2)"
+	@echo "  make test                                  : Run test suite"
+	@echo "  make calibrate                             : Run 50-ticket strict calibration"
+	@echo "  make docker-build                          : Build Docker images"
+	@echo "  make docker-up                             : Start services in Docker containers"
+	@echo "  make docker-down                           : Stop Docker containers"
+	@echo "  make format                                : Format code with ruff"
 
 predict:
-	./build/benchmark_tool --predict $(IN) $(OUT)
+	python src/predict.py --in $(IN) --out $(OUT)
 
 run:
-	./build/grand_mobile_server rules.json models/classifier.onnx
+	python -m uvicorn main:app --host 0.0.0.0 --port 8000
+
+ui:
+	python -m streamlit run admin_ui.py --server.port 8501 --server.address 0.0.0.0
+
+prepare:
+	python src/prepare_dataset.py
+
+train:
+	python src/train_classifier.py
+
+cluster:
+	python src/template_clustering.py
+
+calibrate:
+	python calibrate_pipeline.py
+
+test:
+	python tests/test_contract.py
+	python tests/test_api.py
+	python tests/test_predict_classes.py
+	python tests/test_kazakh_reply.py
+	python src/final_tests.py
+	python calibrate_pipeline.py
+
+stress:
+	python src/final_tests.py
+
+profile:
+	python src/run_profiler.py
 
 benchmark:
-	./build/benchmark_tool tickets_valid.jsonl
+	python src/benchmark_2k.py 2000
+
+load-test:
+	python src/load_test.py --count 50000 --concurrency 50
 
 docker-build:
 	docker compose build
@@ -37,5 +70,6 @@ docker-up:
 docker-down:
 	docker compose down
 
-clean:
-	rm -rf build
+format:
+	python -m ruff format .
+	python -m ruff check --fix .

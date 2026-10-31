@@ -1,62 +1,39 @@
-# ==============================================================================
-# Multi-stage Dockerfile for Pure C++20 High-Performance Production Backend
-# ==============================================================================
+# Multi-purpose optimized Dockerfile for Grand Mobile Support Copilot
+FROM python:3.11-slim
 
-# ------------------------------------------------------------------------------
-# Stage 1: Builder (Compiler & Dependencies)
-# ------------------------------------------------------------------------------
-FROM ubuntu:22.04 AS builder
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    cmake \
-    git \
-    libcurl4-openssl-dev \
-    ca-certificates \
-    wget \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /build
-
-# Copy build config and source code
-COPY CMakeLists.txt ./
-COPY src/ ./src/
-
-# Compile C++ backend in Release mode with maximum compiler optimizations (-O3 -march=native -flto)
-RUN cmake -B build -DCMAKE_BUILD_TYPE=Release \
-    && cmake --build build --config Release -j$(nproc)
-
-# ------------------------------------------------------------------------------
-# Stage 2: Minimal Production Runtime
-# ------------------------------------------------------------------------------
-FROM ubuntu:22.04 AS runtime
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libcurl4 \
-    ca-certificates \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONIOENCODING=utf-8 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /app
 
-# Copy compiled binaries from builder
-COPY --from=builder /build/build/grand_mobile_server /app/grand_mobile_server
-COPY --from=builder /build/build/benchmark_tool /app/benchmark_tool
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy essential knowledge base and model assets
-COPY rules.json taxonomy.json ./
+# Install python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application source code and configuration
+COPY rules.json taxonomy.json setup.py ./
+COPY src/ ./src/
 COPY models/ ./models/
+COPY app.py main.py admin_ui.py predict.py ./
+COPY entrypoint.sh ./
 
-# Expose high-speed REST API port
-EXPOSE 8000
+# Build high-performance C++ core extension
+RUN python setup.py build_ext --inplace
 
-# Healthcheck
-HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+RUN chmod +x entrypoint.sh
 
-# Start native C++ server
-ENTRYPOINT ["/app/grand_mobile_server"]
+# Expose FastAPI (8000) and Streamlit Admin UI (8501)
+EXPOSE 8000 8501
+
+# Run entrypoint script
+CMD ["./entrypoint.sh"]

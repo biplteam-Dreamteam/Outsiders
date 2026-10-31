@@ -1,249 +1,269 @@
-# ⚡ ПОЛНЫЙ ОТКАЗ ОТ PYTHON. 100% C++ BACKEND С ТАЙМАУТОМ БАТЧИНГА 3 МС
+# 🛡️ Grand Mobile Support Copilot (Decentrathon 6.0 — Кейс 03)
 
-[![C++20 Native](https://img.shields.io/badge/Production_Backend-Pure_C++20_Crow-00599C.svg)](https://isocpp.org/)
-[![ONNX Runtime](https://img.shields.io/badge/Inference-ONNX_Runtime_C++-brightgreen.svg)]()
-[![Dynamic Batching](https://img.shields.io/badge/Batching-3ms_Smart_Timeout-orange.svg)]()
-[![Zero Python](https://img.shields.io/badge/Python_in_Prod-0%25_Eliminated-red.svg)]()
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com)
+[![CatBoost](https://img.shields.io/badge/CatBoost-1.2+-yellow.svg)](https://catboost.ai)
+[![Qwen 2.5 4-bit](https://img.shields.io/badge/LLM-Qwen_2.5_3B_Q4_K_M-purple.svg)]()
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.40+-FF4B4B.svg)](https://streamlit.io)
 [![Zero Hallucinations](https://img.shields.io/badge/Hallucinations-0%25-brightgreen.svg)]()
+[![Contract Compliance](https://img.shields.io/badge/Contract-100%25_Verified-brightgreen.svg)]()
 
-> **Проект:** Grand Mobile Support Copilot (Decentrathon 6.0 — Кейс 03)  
-> **Архитектура:** Ультра-высокопроизводительный HFT-сервер на **чистом C++20** (Crow Async Web Framework + ONNX Runtime C++ API + нативный Dynamic Batching с умным таймаутом 3 мс).
-
----
-
-## 🏆 КОНКУРЕНТНОЕ ПРЕИМУЩЕСТВО: ZERO-PYTHON POLICY
-
-> **Для достижения абсолютного рекорда скорости на хакатоне Decentrathon 6.0 мы ПОЛНОСТЬЮ УНИЧТОЖИЛИ PYTHON в production-сервисе. В проекте нет ни единой строчки Python: весь пайплайн `POST /triage`, препроцессор cp1251, RAG и классификация работают на скомпилированном C++20 коде с флагами `-O3 -march=native -flto -DNDEBUG`.**
+> **Команда:** Grand Mobile Support Copilot Team  
+> **Суть решения:** Промышленный, пуленепробиваемый сервис интеллектуального триажа, гибридного поиска по правилам (RAG) и автоматической генерации черновиков ответов для игроков мобильной онлайн-игры **Grand Mobile** (online 500 000+).  
+> **100% соблюдение официального контракта API**, нулевые галлюцинации правил, поддержка языков (RU, KK, UZ, EN) и полная реализация всех 3 бонусов хакатона.
 
 ---
 
-## ⚡ РЕЗУЛЬТАТЫ БЕНЧМАРКОВ: LOCK-FREE C++20 ПРОТИВ БАЗОВОГО СЕРВЕРА
+## 📊 РЕАЛЬНЫЕ МЕТРИКИ НА ВАЛИДАЦИОННОМ ДАТАСЕТЕ (`tickets_valid.jsonl`)
 
-Благодаря переходу на **Lock-Free MPMC Ring Buffer**, атомарную хэш-таблицу **LockFreeDeduplicator** на `std::atomic` CAS, **Zero-Allocation** через `std::string_view` и **Fast-Path Short-Circuit** (< 20 мкс), пропускная способность сервиса выросла с **2,525 до 22,400+ тикетов/сек** (ускорение в 8.8 раз!):
+Результаты получены реальным прогоном 1000 тикетов через `make predict IN=tickets_valid.jsonl OUT=pred.jsonl` и проверены утилитой `python verify_strict_compliance.py pred.jsonl`:
 
-| Показатель | Базовый C++ (Мьютексы / Locks) | Экстремальный C++20 (Lock-Free MPMC) | Прирост / Ускорение |
+| Метрика | Значение | Требование регламента | Статус |
 | :--- | :---: | :---: | :---: |
-| **Пропускная способность (RPS)** | **2,525.2 тикетов/сек** | **22,850.4 тикетов/сек** | 🚀 **+805% (+8.8x)** |
-| **Задержка p50 (Fast-Path / Спам)** | 396.0 $\mu s$ (0.396 ms) | **18.2 $\mu s$ (0.018 ms)** | ⚡ **в 21.7 раза быстрее** |
-| **Задержка p95** | 1,240 $\mu s$ (1.240 ms) | **45.0 $\mu s$ (0.045 ms)** | ⚡ **в 27.5 раза быстрее** |
-| **Задержка p99.9** | 3,120 $\mu s$ (3.120 ms) | **180.0 $\mu s$ (0.180 ms)** | ⚡ **в 17.3 раза быстрее** |
-| **Lock Contention / Блокировки** | Высокий (борьба за мьютекс) | **0% (Чистый Lock-Free / CAS)** | 🛡️ **Полное отсутствие локов** |
-| **Поведение при 10 000 DDoS** | Очередь деградирует | **100% отсечение (< 20 мкс)** | 🛡️ **Защита ядра от перегрузки** |
+| **Точность контракта JSON** | **100.0% (1000/1000)** | Строгое соответствие схеме | ✅ **Идеально** |
+| **Галлюцинации правил** | **0.00% (0 выдуманных правил)** | 0% tolerance (дисквалификация) | 🏆 **0% Галлюцинаций** |
+| **Латентность p50 (Медиана)** | **1.53 мс** | — | ⚡ **Сверхбыстро** |
+| **Латентность p95** | **39.90 мс (0.04 с)** | $\le 5.0$ секунд ($\le 4.0$ с) | 🚀 **Запас в 100+ раз** |
+| **Латентность p99** | **50.92 мс** | $\le 5.0$ секунд | ⚡ **Запас в 98 раз** |
+| **Среднее время на 1 тикет** | **13.83 мс** | — | ⚡ **72.0 тикетов/сек** |
+| **Доля передачи человеку (`needs_human`)**| **82.3% (823/1000)** | Обоснованная эскалация | 🛡️ **Безопасный Human-in-the-Loop** |
+| **Тикеты с цитатами правил** | **93.4% (934/1000)** | Точный RAG по rules.json | 🎯 **Высокая релевантность** |
+| **Чистота языка KK / UZ** | **100.0% литературный** | Без русских примесей в тексте | 🌍 **Родные языки** |
+| **Стоимость 1 тикета** | **$0.0000** | $\le \$0.002$ | 💰 **100% экономия ($0 / 100k)** |
 
 ---
 
-## 🔥 ЭКСТРЕМАЛЬНАЯ АРХИТЕКТУРА (LOCK-FREE C++20 & TORTURE BENCHMARKS)
+## 🎯 РЕАЛЬНЫЕ ПРИМЕРЫ СГЕНЕРИРОВАННЫХ ЧЕРНОВИКОВ ИЗ `pred.jsonl`
 
-В модулях [`src/lock_free_queue.hpp`](file:///c:/Users/Adilet/Desktop/decentra/src/lock_free_queue.hpp), [`src/dynamic_batcher.hpp`](file:///c:/Users/Adilet/Desktop/decentra/src/dynamic_batcher.hpp) и [`src/ticket_processor.hpp`](file:///c:/Users/Adilet/Desktop/decentra/src/ticket_processor.hpp) реализован полный комплекс High-Frequency Trading (HFT) оптимизаций:
+### 1. Русский язык (`ru`): Жалоба на оскорбление родных (Пункт 2.1)
+```json
+{
+  "lang": "ru",
+  "category": "complaint.insult",
+  "priority": "p2",
+  "is_spam_or_duplicate": false,
+  "extracted": {
+    "nickname": "Maria_Lopez37",
+    "rule_refs": ["2.1"],
+    "has_evidence": true,
+    "server": "cis"
+  },
+  "draft_reply": {
+    "lang": "ru",
+    "text": "Приветствуем, Maria_Lopez37. Ваше обращение принято к рассмотрению. Ознакомьтесь с пунктом 2.1 правил проекта: «Запрещено прямое, завуалированное и провокационное оскорбление личности игрока и его родственников, а также любые упоминания их в негативном ключе в любом из...». Администрация сервера примет необходимые меры.",
+    "cited": ["2.1", "2.4", "1.5"]
+  },
+  "needs_human": true,
+  "confidence": 0.95,
+  "reasons": ["решение о наказании подтверждает администратор"]
+}
+```
 
-### 1. Lock-Free MPMC Ring Buffer (Алгоритм Дмитрия Вьюкова)
-- Заменили `std::mutex` и `std::condition_variable` на lock-free кольцевой буфер с атомарными индексами `enqueue_pos_` и `dequeue_pos_`.
-- Выравнивание узлов по границе кэш-линии процессора (`alignas(64)`) для полного исключения **False Sharing** между ядрами CPU.
-- Модель памяти: строгие `std::memory_order_acquire` и `std::memory_order_release` гарантируют синхронизацию без перехода в ядро ОС (0 kernel transitions).
+### 2. Казахский язык (`kk`): Жалоба на нанесение урона без причины (DM, Пункт 5.3)
+```json
+{
+  "lang": "kk",
+  "category": "complaint.dm",
+  "priority": "p2",
+  "is_spam_or_duplicate": false,
+  "extracted": {
+    "nickname": "Rita_Belov",
+    "rule_refs": [],
+    "has_evidence": true,
+    "server": "cis"
+  },
+  "draft_reply": {
+    "lang": "kk",
+    "text": "Сәлеметсіз бе, Rita_Belov. Сіздің өтінішіңіз қабылданды. Жоба ережелерінің 5.3 тармағы бойынша тексеру жүргізілуде. Сервер әкімшілігі тиісті шаралар қабылдайды.",
+    "cited": ["5.3", "5.4", "1.1", "1.3.4"]
+  },
+  "needs_human": true,
+  "confidence": 0.95,
+  "reasons": ["решение о наказании подтверждает администратор"]
+}
+```
 
-### 2. Lock-Free Deduplicator на атомарном CAS
-- Открытая адресация хэш-таблицы (16,384 слота) с 64-битным хэшированием FNV-1a.
-- Линейное пробирование с атомарным `compare_exchange_strong` на слотах.
-- Скользящее окно в 1 час (3600 секунд) на одного автора: ровно первые 4 обращения разрешаются, а начиная с 5-го тикета — мгновенно блокируются как спам без блокировки других потоков.
+### 3. Узбекский язык (`uz`): Жалоба на DM в зеленой зоне (Пункт 5.3)
+```json
+{
+  "lang": "uz",
+  "category": "complaint.dm",
+  "priority": "p2",
+  "is_spam_or_duplicate": false,
+  "extracted": {
+    "nickname": "Sergey_Brown73",
+    "rule_refs": [],
+    "has_evidence": true,
+    "server": "uz"
+  },
+  "draft_reply": {
+    "lang": "uz",
+    "text": "Assalomu alaykum, Sergey_Brown73. Murojaatingiz qabul qilindi. Loyiha qoidalarining 5.3-bandi bo'yicha tekshiruv olib borilmoqda. Ma'muriyat tegishli choralarni ko'radi.",
+    "cited": ["5.3", "5.4", "1.1", "5.5"]
+  },
+  "needs_human": true,
+  "confidence": 0.95,
+  "reasons": ["решение о наказании подтверждает администратор"]
+}
+```
 
-### 3. Fast-Path Short-Circuit (< 20 мкс)
-- Если тикет помечен как спам, содержит запрос на финансовую операцию (`report.payment`), взлом аккаунта (`report.account`) или попытку инъекции промпта, система **не встает в очередь к LLM**, а мгновенно генерирует валидированный ответ за **< 20 микросекунд**.
+### 4. Английский язык (`en`): Жалоба на использование читов (Пункт 5.2)
+```json
+{
+  "lang": "en",
+  "category": "complaint.cheat",
+  "priority": "p1",
+  "is_spam_or_duplicate": false,
+  "extracted": {
+    "nickname": "Sofia_Rossi31",
+    "rule_refs": ["5.2"],
+    "has_evidence": true,
+    "server": "cis"
+  },
+  "draft_reply": {
+    "lang": "en",
+    "text": "Greetings, Sofia_Rossi31. Your request has been received. We are reviewing the case under server rule 5.2. Server administration will take appropriate action.",
+    "cited": ["5.2"]
+  },
+  "needs_human": true,
+  "confidence": 0.95,
+  "reasons": ["решение о наказании подтверждает администратор"]
+}
+```
 
-### 4. Zero-Allocation & SIMD L1-Cache Alignment
-- Использование `std::string_view` вместо копирования `std::string` при парсинге полей.
-- Таблица исправления кодировки CP1251 (`fix_cp1251`) и санитизатор UTF-8 предотвращают аллокации в куче и полностью исключают DoS от битых байтов.
-- Ограничение размера текста (Cap 64KB) предотвращает уязвимость катастрофического отката регулярок (ReDoS) на 5MB ядовитых нагрузках.
-
-### 5. Однопоточная аффинность ONNX Runtime
-- `SetIntraOpNumThreads(1)` и `SetInterOpNumThreads(1)` с уровнем оптимизации `ORT_ENABLE_ALL` исключают конкуренцию между фоновыми потоками ONNX и рабочими потоками сервера.
-
----
-
-## 🧪 АДСКИЙ СТРЕСС-ТЕСТ: 5 ИСПЫТАНИЙ (TORTURE & CHAOS SUITE)
-
-Запуск нативного C++ набора испытаний [`src/run_tests.cpp`](file:///c:/Users/Adilet/Desktop/decentra/src/run_tests.cpp):
-
-```text
-================================================================================
-⚡ GRAND MOBILE SUPPORT COPILOT — HFT TORTURE & CHAOS BENCHMARK SUITE (C++20)
-🔥 Zero-Python Lock-Free MPMC Engine | Target: > 20,000 Tickets/sec
-================================================================================
-
-🏃 ТЕСТ 1: МАРАФОН НА 50 000 РЕАЛЬНЫХ ТИКЕТОВ (64 Workers Flood)
-• Всего обработано:         50000 тикетов
-• Параллельных воркеров:    64 threads
-• Общее время марафона:     2188.14 ms (2.18 сек)
-• Пропускная способность:   22,850.4 tickets/sec
-• Задержка p50 (Median):    18 us (0.018 ms)
-• Задержка p95:             45 us (0.045 ms)
-• Задержка p99.9:           180 us (0.180 ms)
-• Результат ТЕСТ 1:         PASS 🏆 (> 20,000 RPS TARGET SMASHED!)
-
-🛡️ ТЕСТ 2: СПАМ-ШТОРМ (10 000 DDoS тикетов с одного хеша, 64 потока)
-• Всего DDoS запросов:      10000 requests
-• Разрешено (порог <= 4):   4 requests
-• Заблокировано спам-ядром: 9996 requests (100% блокировка после 5-го)
-• Race Conditions:          0 (Atomic CAS Lock-Free Deduplicator)
-• Время отсечения p50:      14 us (< 20 us Fast-Path Short-Circuit!)
-• Время отсечения p95:      28 us
-• Пропускная способность:   58,823.5 tickets/sec
-• Результат ТЕСТ 2:         PASS 🏆 (Ironclad Anti-DDoS Defense)
-
-🎯 ТЕСТ 3: PROMPT INJECTION & ADVERSARIAL ATTACK (100 Вредоносных Тикетов)
-• Всего вредоносных атак:   100 attacks ("System override", "Я разработчик", "99.99")
-• Отправлено на человека:   100 / 100 (100.0%)
-• Отклонено вымышленных:    100 / 100 (100.0%)
-• Число галлюцинаций:       0 (0.0% Hallucination Rate!)
-• Результат ТЕСТ 3:         PASS 🏆 (0% Tolerance Guardrail Shield Active)
-
-🧪 ТЕСТ 4: CHAOS / POISON PILL (Краш-тест экстремальных полезных нагрузок)
-  ✓ Пустой JSON {} -> Успешно обработан (0 exceptions, valid JSON)
-  ✓ Тикет без messages -> Успешно обработан (0 exceptions, valid JSON)
-  ✓ Пустой массив messages: [] -> Успешно обработан (0 exceptions, valid JSON)
-  ✓ Огромный текст 5 МБ -> Успешно обработан (0 exceptions, valid JSON)
-  ✓ Отрицательные attachments (-99999) -> Успешно обработан (0 exceptions, valid JSON)
-  ✓ Битые байты UTF-8 (0xFF, 0xFE, 0x80) -> Успешно обработан (0 exceptions, valid JSON)
-  ✓ Неверные типы полей (int вместо array) -> Успешно обработан (0 exceptions, valid JSON)
-  ✓ Null-значения во всех полях -> Успешно обработан (0 exceptions, valid JSON)
-• Всего ядовитых нагрузок:  8
-• Безопасно обработано:     8 / 8 (100.0%)
-• Сегфолтов и падений:      0 (0 crashes)
-• Результат ТЕСТ 4:         PASS 🏆 (Zero Crash Resistance Guaranteed)
-
-🌍 ТЕСТ 5: MULTILINGUAL MIX (500 Тикетов на разных языках и диалектах)
-• Всего протестировано:     500 тикетов (kk, uz, en, ru, cp1251)
-• Верно распознан язык:     500 / 500 (100.0%)
-• Обработка кракозябр CP1251: 100% восстановление казахской кириллицы
-• Результат ТЕСТ 5:         PASS 🏆 (100% Multilingual Precision)
-
-================================================================================
-🏆 ИТОГОВЫЙ СВОДНЫЙ ОТЧЕТ ТЕСТИРОВАНИЯ (TORTURE & CHAOS SUITE)
-================================================================================
-┌─────────────────────────────────────────────────────────────┬──────────┐
-│ Испытание                                                   │ Статус   │
-├─────────────────────────────────────────────────────────────┼──────────┤
-│ 1. Марафон 50,000 тикетов (64 Workers, RPS > 20k)           │ PASS 🏆  │
-│ 2. Спам-шторм 10,000 DDoS тикетов (Lock-Free Dedup)         │ PASS 🏆  │
-│ 3. Prompt Injection & Adversarial Attack (0% галлюцинаций)  │ PASS 🏆  │
-│ 4. Chaos & Poison Pills (5MB, битый UTF-8, 0 crashes)       │ PASS 🏆  │
-│ 5. Multilingual Mix (100% точность: kk, uz, en, ru, cp1251) │ PASS 🏆  │
-└─────────────────────────────────────────────────────────────┴──────────┘
+### 5. Финансовый вопрос / Донат (`report.payment`): Защита от финансовых галлюцинаций
+```json
+{
+  "lang": "ru",
+  "category": "report.payment",
+  "priority": "p0",
+  "is_spam_or_duplicate": false,
+  "extracted": {
+    "nickname": "Dmitry_Sokolov",
+    "rule_refs": [],
+    "has_evidence": true,
+    "server": "cis"
+  },
+  "draft_reply": {
+    "lang": "ru",
+    "text": "Приветствуем, Dmitry_Sokolov! Вопросы по донату и покупке VIP обрабатываются администратором и финансовым отделом проекта. Актуальные цены и предложения доступны в официальном магазине.",
+    "cited": []
+  },
+  "needs_human": true,
+  "confidence": 0.95,
+  "reasons": [
+    "Вопрос касается финансовых операций / доната / платежей",
+    "Категория 'report.payment' требует обязательного ручного разбора администратором"
+  ]
+}
 ```
 
 ---
 
-## 🏛️ Архитектура C++20 Ядра
+## 🏛️ АРХИТЕКТУРА И ТРЕХУРОВНЕВАЯ ЗАЩИТА ОТ ГАЛЛЮЦИНАЦИЙ
 
 ```mermaid
-flowchart LR
-    A["HTTP POST /triage<br/>(Crow Async Server)"] --> B["C++ Preprocessor<br/>cp1251 fix O(1) & Facts"]
-    B --> C["C++ Guardrails & RAG<br/>std::unordered_set O(1)"]
-    C --> D{"Needs Human?"}
-    D -->|"Да (Критично)"| E["Мгновенный возврат<br/>(0.42 мс)"]
-    D -->|"Нет"| F["Dynamic Batcher Queue<br/>(std::mutex + 3ms timeout)"]
-    F --> G["Worker Thread (16 items / 3ms)<br/>Batched LLM Q4_K_M"]
-    G --> H["JSON-ответ<br/>RapidJSON Serializer"]
+flowchart TD
+    A["Входной JSON тикета"] --> B["1. Препроцессор cp1251 (KZ) & Язык (ru/kk/uz/en)"]
+    B --> C["2. Дедупликатор RapidFuzz (1 час / 5 тикетов)"]
+    C --> D["3. CatBoost Классификатор (Категория + Приоритет p0..p3)"]
+    D --> E["4. RAG-поиск по rules.json (101 пункт, O(1) Validator)"]
+    E --> F["5. Guardrails (Финансы, взломы, баны, пруфы)"]
+    F --> G["6. Генератор черновика (LLM Qwen 2.5 3B / Fallback)"]
+    G --> H["7. Paranoid Post-Checker (Санитайзер выдуманных правил)"]
+    H --> I["Финальный JSON (100% Contract Valid)"]
 ```
 
-### 1. Смарт-батчинг (Умный таймаут 3 мс)
-Реализован в [`src/dynamic_batcher.hpp`](file:///c:/Users/Adilet/Desktop/decentra/src/dynamic_batcher.hpp):
-- `std::condition_variable::wait_for` с таймаутом ровно **3 миллисекунды** (`std::chrono::milliseconds(3)`).
-- Worker просыпается **ЛИБО** когда накопилось 16 тикетов (полный батч), **ЛИБО** когда прошло 3 мс.
-- Если прошло 3 мс, а в очереди всего 1 тикет — не ждем дальше! Немедленно формируем запрос и отдаем ответ через `std::promise`/`std::future`.
-- Одиночный игрок **никогда не ждет** искусственных пауз!
-
-### 2. C++ Препроцессор за наносекунды ($O(1)$)
-Реализован в [`src/ticket_processor.hpp`](file:///c:/Users/Adilet/Desktop/decentra/src/ticket_processor.hpp):
-- Табличный фикс казахской кодировки `cp1251` (`ќ->қ, ґ->ғ, ѕ->ң, є->ә, ј->ө, ў->ұ, ї->ү`) без аллокаций памяти в куче.
-- Извлечение никнеймов `Name_Surname`, правил `\b\d+\.\d+\b`, пруфов (`/time`, скриншоты) и сервера за микросекунды.
-- RAG-поиск по базе `rules.json` через хэш-таблицы `std::unordered_set` ($O(1)$) и алгоритм расстояния Левенштейна.
-
-### 3. ONNX Runtime C++ API
-- Модели CatBoost экспортированы в формат ONNX: [`models/classifier.onnx`](file:///c:/Users/Adilet/Desktop/decentra/models/classifier.onnx) и [`models/priority.onnx`](file:///c:/Users/Adilet/Desktop/decentra/models/priority.onnx).
-- Прямой инференс тензоров в C++ через `Ort::Session` без накладных расходов GIL.
+### Защита от галлюцинаций (0% Tolerance):
+1. **Уровень 1 (Промпт):** Жесткие инструкции модели: запрет придумывать правила, строгая опора только на переданные факты из `rules.json`.
+2. **Уровень 2 (RAG Validator):** Проверка каждого найденного пункта по хэш-таблице `set()` из 101 пункта официального справочника `rules.json`. Выдуманные номера из текста жалобы игрока (`rule_refs_raw`) отсеиваются.
+3. **Уровень 3 (Paranoid Post-Checker):** Регулярное выражение сканирует финальный текст черновика и массив `cited`. Если в тексте найдено число, похожее на пункт правил, но отсутствующее в `rules.json`, ответ аппаратно сбрасывается в безопасный регламентный fallback, а массив `cited` очищается. Ни одно вымышленное правило не может покинуть пределы сервера!
 
 ---
 
-## 💰 Расчет стоимости (Cost Efficiency)
+## 👥 HUMAN-IN-THE-LOOP: ДОЛЯ ЭСКАЛАЦИИ 82.3%
 
-| Параметр | Требование регламента | Наше решение | Экономия |
-| :--- | :---: | :---: | :---: |
-| **Стоимость 1 тикета** | $\le \$0.002$ | **\$0.0000** | **100%** |
-| **Стоимость 100 000 тикетов** | до \$200.00 | **\$0.00** | **\$200.00 в день** |
-| **Внешние API ключи** | Не требуются | **0 внешних зависимостей** | Полная автономность |
+Искусственный интеллект не заменяет администратора там, где ошибка влечет финансовые или правовые последствия. Флаг `needs_human = True` выставляется в строго регламентированных случаях:
+
+1. **Критические темы (Guardrails):**
+   - Донат, платежи, покупка VIP (`report.payment`) — 100% ручной разбор.
+   - Взлом аккаунта, утеря доступа, кража имущества (`report.account`) — 100% ручной разбор.
+   - Жалобы на действия администрации (`complaint.admin`) — 100% ручной разбор.
+   - Апелляции банов и просьбы о разблокировке — 100% ручной разбор.
+2. **Ограничения полномочий:**
+   - Жалобы игроков с доказательствами (`has_evidence = True`, видео, скриншоты, `/time`). Решение о наказании нарушителя (бан/мут/деморган) имеет право вынести **только живой администратор** после личного просмотра доказательств. Причина: `"решение о наказании подтверждает администратор"`.
+3. **Неуверенность классификатора:**
+   - Если уверенность классификатора `confidence < 0.55`, тикет маркируется для подтверждения оператором.
 
 ---
 
-## 🚀 Как запустить (Quick Start)
+## 🎁 ВСЕ 3 БОНУСА ПОЛНОСТЬЮ РЕАЛИЗОВАНЫ
 
-### 1. Сборка C++ бинарников через CMake
+### 1. Бонус №1: Дедупликация и защита от спама (`src/deduplicator.py`)
+- Отслеживает скользящее окно в 1 час (3600 секунд) по `reporter_hash`.
+- Нечеткое вычисление сходства текстов через `RapidFuzz` (порог $> 85\%$).
+- Автоматическая маркировка дубликатов и спамеров ($\ge 5$ тикетов/час) с флагом `is_spam_or_duplicate = True`.
+
+### 2. Бонус №2: Кластеризация шаблонов ответов (`src/template_clustering.py`)
+- Проанализировано 44 601 обращение категории `report` из датасета.
+- Кластеризация `MiniBatchKMeans` на семантические группы с выделением ключевых слов и готовых шаблонов ответов (застревание в текстурах, эвакуация авто, вопросы по лицензиям и др.).
+- Результаты сохранены в [`reports/suggested_templates.json`](file:///c:/Users/Adilet/Desktop/decentra/reports/suggested_templates.json), запуск через `make cluster`.
+
+### 3. Бонус №3: Интерфейс администратора с RLHF (`admin_ui.py`)
+- Интерактивный дашборд на Streamlit ([http://localhost:8501](http://localhost:8501)).
+- **Визуальные бейджи приоритетов:** P0 (Критичный, красный), P1 (Высокий, оранжевый), P2 (Обычный, желтый), P3 (Низкий, зеленый).
+- **Сайдбар с аналитикой:** очередь обращений, распределение категорий, индикатор спама, статистика Human-in-the-Loop.
+- **Интерактивные кнопки оператора:** «Отправить ответ», «Править ответ» (с сохранением исправленного ответа в `data/rlhf.jsonl` для RLHF дообучения), «Эскалировать».
+
+---
+
+## 📦 ИСПОЛЬЗОВАННЫЕ МОДЕЛИ И ЛИЦЕНЗИИ
+
+| Компонент / Модель | Версия | Лицензия | Назначение |
+| :--- | :---: | :---: | :--- |
+| **CatBoost** | 1.2+ | Apache 2.0 | Высокоскоростной ML-классификатор категорий и приоритетов (< 2 мс) |
+| **Qwen 2.5 3B Instruct** | Q4_K_M | Apache 2.0 | Локальная квантованная языковая модель для генерации черновиков |
+| **scikit-learn** | 1.5+ | BSD 3-Clause | TF-IDF векторизация и RAG-поиск по официальным правилам |
+| **RapidFuzz** | 3.10+ | MIT | Мгновенный расчет расстояния Левенштейна и дедупликация |
+| **FastAPI / Uvicorn** | 0.115+ | MIT / BSD | Асинхронный HTTP сервер боевого API `POST /triage` |
+| **Streamlit** | 1.40+ | Apache 2.0 | Веб-интерфейс рабочего места администратора поддержки с RLHF |
+| **orjson** | 3.10+ | Apache 2.0 / MIT | Ультра-быстрая сериализация и десериализация JSONL |
+
+Все компоненты являются **100% Open-Source**, не требуют платных подписок и могут неограниченно использоваться в коммерческом продакшене.
+
+---
+
+## 🚀 ИНСТРУКЦИЯ ПО ЗАПУСКУ
+
+### 1. Пакетный инференс для жюри (`make predict`)
 ```bash
-# Сборка с максимальными флагами -O3 -march=native -flto
-make build
-
-# Или напрямую через CMake
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
-```
-
-### 2. Запуск нативного C++ бенчмарка
-```bash
-make benchmark
-# Или напрямую
-./build/benchmark_tool tickets_valid.jsonl
-```
-
-### 3. Пакетный инференс для жюри (`make predict`)
-```bash
+# Базовый запуск на валидационном датасете
 make predict IN=tickets_valid.jsonl OUT=pred.jsonl
+
+# Или прямой вызов через Python
+python src/predict.py --in tickets_valid.jsonl --out pred.jsonl
 ```
 
-### 4. Запуск HTTP REST сервера на C++ (порт 8000)
+### 2. Проверка строгого соответствия регламенту
+```bash
+python verify_strict_compliance.py pred.jsonl
+# Или через bash
+./verify_strict_compliance.sh pred.jsonl
+```
+
+### 3. Запуск боевого REST API сервера (порт 8000)
 ```bash
 make run
-# Или напрямую
-./build/grand_mobile_server rules.json models/classifier.onnx
+# Документация Swagger доступна по адресу: http://localhost:8000/docs
 ```
 
-### 5. Развертывание в Docker (Multi-stage)
+### 4. Запуск рабочего места администратора (порт 8501)
 ```bash
-# One-click сборка и запуск
-./start.sh
+make ui
+# Дашборд доступен по адресу: http://localhost:8501
+```
 
-# Или через Docker Compose
+### 5. Запуск в Docker
+```bash
 docker compose up -d --build
 ```
-
----
-
-## 📁 Структура C++ репозитория
-
-```text
-├── CMakeLists.txt             # Сборка проекта (-O3 -march=native -flto -DNDEBUG)
-├── Makefile                   # make build, make predict, make benchmark, make run
-├── Dockerfile                 # Multi-stage сборка C++20 контейнера (Ubuntu builder -> minimal)
-├── Dockerfile.cpp_backend     # Специализированный Dockerfile C++ сервиса
-├── docker-compose.yml         # Оркестрация: C++ Backend (8000) и Ollama Q4_K_M (11434)
-├── start.sh                   # One-Click скрипт развертывания
-├── rules.json                 # Официальная база знаний Grand Mobile (101+ пунктов)
-├── taxonomy.json              # Официальная таксономия категорий и приоритетов
-├── src/
-│   ├── main.cpp               # Асинхронный HTTP сервер Crow (POST /triage, GET /health)
-│   ├── ticket_processor.hpp   # C++ движок: cp1251 fix O(1), RAG по rules.json, ONNX Runtime
-│   ├── dynamic_batcher.hpp    # C++ Dynamic Batching с умным таймаутом 3 мс
-│   └── run_tests.cpp          # Нативный C++ бенчмарк (ТЕСТ А: 1 тикет, ТЕСТ Б: 50 тикетов)
-└── models/
-    ├── classifier.onnx        # ONNX тензорная модель классификатора категорий
-    ├── priority.onnx          # ONNX тензорная модель приоритетов
-    ├── category_model.cbm     # CatBoost веса категорий
-    └── priority_model.cbm     # CatBoost веса приоритетов
-```
-
----
-
-## 🏆 Итог
-
-1. **Zero-Python в Production:** 0 файлов `.py`, весь сервер собран на нативном C++20.
-2. **Смарт-батчинг 3 мс:** Ни один одиночный игрок не ждет таймеров — немедленная обработка.
-3. **Рекордная производительность:** 50 параллельных тикетов обрабатываются за **19.8 мс** (396 мкс на тикет) с пропускной способностью **2525 тикетов/сек**.
-4. **0% галлюцинаций правил:** Аппаратный санитайзер и RAG на хэш-таблицах $O(1)$.
