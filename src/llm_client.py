@@ -238,7 +238,7 @@ class LLMClient:
                         "content": f"Напиши финальный ответ игроку строго на языке '{lang}':",
                     },
                 ],
-                "max_tokens": 150,
+                "max_tokens": 80,
                 "temperature": 0.2,
             }
             resp = await client.post(f"{self.base_url}/chat/completions", json=payload)

@@ -1,8 +1,9 @@
-import json
+import functools
 import os
 import re
 from typing import Any
 
+import orjson
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -88,29 +89,21 @@ CATEGORY_RULES_MAP = {
 }
 
 
-class RAGEngine:
-    """
-    Гибридный RAG-движок для правил Grand Mobile:
-    - Индексация пунктов правил из rules.json
-    - Точное сопоставление по номеру пункта (ref)
-    - Лексический поиск с помощью TF-IDF
-    - Понимание игрового сленга и аббревиатур (дм, дб, ск, оск род, софт и др.)
-    """
+_GLOBAL_RAG_CACHE: dict[str, Any] = {}
 
-    def __init__(self, rules_path: str = "rules.json"):
-        self.rules_path = rules_path
-        self.rules_dict: dict[str, dict[str, Any]] = {}
-        self.points_list: list[dict[str, Any]] = []
-        self.vectorizer: TfidfVectorizer | None = None
-        self.tfidf_matrix = None
-        self._load_rules()
 
-    def _load_rules(self):
-        if not os.path.exists(self.rules_path):
-            return
+def get_or_load_rag_index(rules_path: str = "rules.json") -> dict[str, Any]:
+    """Загружает базу rules.json и строит TF-IDF индекс один раз в память (Singleton Cache)."""
+    global _GLOBAL_RAG_CACHE
+    if rules_path in _GLOBAL_RAG_CACHE:
+        return _GLOBAL_RAG_CACHE[rules_path]
 
-        with open(self.rules_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+    rules_dict: dict[str, dict[str, Any]] = {}
+    points_list: list[dict[str, Any]] = []
+
+    if os.path.exists(rules_path):
+        with open(rules_path, "rb") as f:
+            data = orjson.loads(f.read())
 
         for rule_section in data.get("rules", []):
             section_title = rule_section.get("category", "")
@@ -128,36 +121,58 @@ class RAGEngine:
                     "text": text,
                     "search_doc": f"{ref} {section_title} {text}".lower(),
                 }
-                # Keep first or best definition for ref in rules_dict
-                if ref not in self.rules_dict:
-                    self.rules_dict[ref] = item
-                self.points_list.append(item)
+                if ref not in rules_dict:
+                    rules_dict[ref] = item
+                points_list.append(item)
 
-        # Build TF-IDF search index
-        if self.points_list:
-            docs = [p["search_doc"] for p in self.points_list]
-            self.vectorizer = TfidfVectorizer(ngram_range=(1, 2), min_df=1)
-            self.tfidf_matrix = self.vectorizer.fit_transform(docs)
+    vectorizer = None
+    tfidf_matrix = None
+    if points_list:
+        docs = [p["search_doc"] for p in points_list]
+        vectorizer = TfidfVectorizer(ngram_range=(1, 2), min_df=1)
+        tfidf_matrix = vectorizer.fit_transform(docs)
+
+    cached_entry = {
+        "rules_dict": rules_dict,
+        "points_list": points_list,
+        "vectorizer": vectorizer,
+        "tfidf_matrix": tfidf_matrix,
+    }
+    _GLOBAL_RAG_CACHE[rules_path] = cached_entry
+    return cached_entry
+
+
+class RAGEngine:
+    """
+    Гибридный RAG-движок для правил Grand Mobile:
+    - Индексация пунктов правил из rules.json
+    - Точное сопоставление по номеру пункта (ref)
+    - Лексический поиск с помощью TF-IDF
+    - Понимание игрового сленга и аббревиатур (дм, дб, ск, оск род, софт и др.)
+    """
+
+    def __init__(self, rules_path: str = "rules.json"):
+        self.rules_path = rules_path
+        index_data = get_or_load_rag_index(rules_path)
+        self.rules_dict: dict[str, dict[str, Any]] = index_data["rules_dict"]
+        self.points_list: list[dict[str, Any]] = index_data["points_list"]
+        self.vectorizer: TfidfVectorizer | None = index_data["vectorizer"]
+        self.tfidf_matrix = index_data["tfidf_matrix"]
 
     def get_valid_rules_dict(self) -> dict[str, dict[str, Any]]:
         return self.rules_dict
 
-    def retrieve(
+    @functools.lru_cache(maxsize=2048)
+    def _cached_search_refs(
         self,
-        query: str,
-        category: str | None = None,
-        extracted_refs: list[str] | None = None,
-        top_k: int = 4,
-    ) -> list[dict[str, Any]]:
-        """
-        Ищет наиболее релевантные пункты правил.
-        Гарантирует возврат только реально существующих пунктов из rules.json.
-        """
-        results: dict[str, dict[str, Any]] = {}
-        query_lower = query.lower().replace("ё", "е")
+        query_lower: str,
+        category: str | None,
+        extracted_refs_tuple: tuple[str, ...],
+        top_k: int,
+    ) -> tuple[str, ...]:
+        results: dict[str, bool] = {}
 
-        # 1. Compound game patterns (higher priority than single keywords)
-        # Green zone rope / kidnapping -> 1.2
+        # 1. Compound game patterns
         if any(
             w in query_lower
             for w in [
@@ -171,9 +186,8 @@ class RAGEngine:
             ]
         ) and any(w in query_lower for w in ["зз", "gz", "зелен"]):
             if "1.2" in self.rules_dict:
-                results["1.2"] = self.rules_dict["1.2"]
+                results["1.2"] = True
 
-        # Green zone kill / DM / DB -> 1.1, 5.3
         elif any(w in query_lower for w in ["mass db", "db in gz", "dm in gz"]) or (
             any(
                 w in query_lower
@@ -191,7 +205,7 @@ class RAGEngine:
         ):
             for r in ["1.1", "5.3"]:
                 if r in self.rules_dict and r not in results:
-                    results[r] = self.rules_dict[r]
+                    results[r] = True
 
         # Racism / nationality / trans -> 2.4
         if any(
@@ -206,8 +220,8 @@ class RAGEngine:
                 "лгбт",
             ]
         ):
-            if "2.4" in self.rules_dict and "2.4" not in results:
-                results["2.4"] = self.rules_dict["2.4"]
+            if "2.4" in self.rules_dict:
+                results["2.4"] = True
 
         # SpawnKill (SK) -> 5.4
         if (
@@ -216,27 +230,27 @@ class RAGEngine:
             or "у дома" in query_lower
         ):
             if "5.4" in self.rules_dict and "5.4" not in results:
-                results["5.4"] = self.rules_dict["5.4"]
+                results["5.4"] = True
 
         # 2. Slang / abbreviation matching
         for slang, target_refs in SLANG_MAP.items():
             if re.search(r"\b" + re.escape(slang) + r"\b", query_lower):
                 for r in target_refs:
                     if r in self.rules_dict and r not in results:
-                        results[r] = self.rules_dict[r]
+                        results[r] = True
 
         # 3. Direct match from extracted refs
-        if extracted_refs:
-            for ref in extracted_refs:
+        if extracted_refs_tuple:
+            for ref in extracted_refs_tuple:
                 ref_clean = str(ref).strip()
                 if ref_clean in self.rules_dict and ref_clean not in results:
-                    results[ref_clean] = self.rules_dict[ref_clean]
+                    results[ref_clean] = True
 
         # 4. Category fallback mapping
         if category and category in CATEGORY_RULES_MAP:
             for r in CATEGORY_RULES_MAP[category]:
                 if r in self.rules_dict and r not in results:
-                    results[r] = self.rules_dict[r]
+                    results[r] = True
 
         # 5. TF-IDF retrieval if needed
         if len(results) < top_k and self.vectorizer is not None and query_lower.strip():
@@ -250,6 +264,22 @@ class RAGEngine:
                     pt = self.points_list[idx]
                     ref = pt["ref"]
                     if ref not in results and ref in self.rules_dict:
-                        results[ref] = self.rules_dict[ref]
+                        results[ref] = True
 
-        return list(results.values())[:top_k]
+        return tuple(results.keys())[:top_k]
+
+    def retrieve(
+        self,
+        query: str,
+        category: str | None = None,
+        extracted_refs: list[str] | None = None,
+        top_k: int = 4,
+    ) -> list[dict[str, Any]]:
+        """
+        Ищет наиболее релевантные пункты правил с использованием LRU-кэша.
+        Гарантирует возврат только реально существующих пунктов из rules.json.
+        """
+        query_lower = query.lower().replace("ё", "е")
+        refs_tuple = tuple(extracted_refs) if extracted_refs else ()
+        matched_refs = self._cached_search_refs(query_lower, category, refs_tuple, top_k)
+        return [self.rules_dict[r] for r in matched_refs if r in self.rules_dict]

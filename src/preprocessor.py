@@ -17,6 +17,7 @@ CP1251_KZ_MAPPING = {
     "ї": "ү",
     "Ї": "Ү",
 }
+CP1251_KZ_TRANSLATE_TABLE = str.maketrans(CP1251_KZ_MAPPING)
 
 KK_LETTERS = set("әғқңөұүһіӘҒҚҢӨҰҮҺІ")
 KK_WORDS = {
@@ -162,21 +163,19 @@ EVIDENCE_REGEX = re.compile("|".join(EVIDENCE_PATTERNS), re.IGNORECASE)
 SERVER_PATTERN = re.compile(
     r"(?:сервер[а-я]*|server)\s*[:#№]?\s*(\d+|[a-zA-Z]+)", re.IGNORECASE
 )
+WHITESPACE_NEWLINES_RE = re.compile(r"[\r\n\t]+")
+WHITESPACE_MULTI_RE = re.compile(r"\s{2,}")
+WORD_TOKEN_RE = re.compile(r"[a-zA-Zа-яА-ЯёЁ\'`]+")
+GZ_PATTERN = re.compile(r"\b(?:gz|гз|зз)\b", re.IGNORECASE)
 
 
 def normalize_cp1251_kz(text: str) -> str:
-    """Заменяет искаженные символы кодировки cp1251 на правильные казахские буквы."""
+    """Заменяет искаженные символы кодировки cp1251 на правильные казахские буквы через str.translate()."""
     if not text:
         return ""
-    # Map corrupted cp1251 characters
-    res = []
-    for ch in text:
-        res.append(CP1251_KZ_MAPPING.get(ch, ch))
-    text_norm = "".join(res)
-    # Normalize whitespaces
-    text_norm = re.sub(r"[\r\n\t]+", " ", text_norm)
-    text_norm = re.sub(r"\s{2,}", " ", text_norm).strip()
-    return text_norm
+    text_norm = text.translate(CP1251_KZ_TRANSLATE_TABLE)
+    text_norm = WHITESPACE_NEWLINES_RE.sub(" ", text_norm)
+    return WHITESPACE_MULTI_RE.sub(" ", text_norm).strip()
 
 
 def detect_language(text: str, default_lang: str | None = None) -> str:
@@ -196,7 +195,7 @@ def detect_language(text: str, default_lang: str | None = None) -> str:
         return "kk"
 
     # Tokenize words
-    words = re.findall(r"[a-zA-Zа-яА-ЯёЁ\'`]+", text_lower)
+    words = WORD_TOKEN_RE.findall(text_lower)
     if not words:
         return default_lang or "und"
 
@@ -291,7 +290,7 @@ def extract_facts(
         refs_found.add(match.group(0))
 
     # Check GZ / ЗЗ
-    if re.search(r"\b(?:gz|гз|зз)\b", (raw_refs_norm + " " + text_norm), re.IGNORECASE):
+    if GZ_PATTERN.search(raw_refs_norm + " " + text_norm):
         refs_found.add("GZ")
 
     rule_refs = sorted(refs_found)

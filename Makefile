@@ -52,6 +52,9 @@ test:
 stress:
 	python src/final_tests.py
 
+profile:
+	python src/run_profiler.py
+
 docker-build:
 	docker compose build
 

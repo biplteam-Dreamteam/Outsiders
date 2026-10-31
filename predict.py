@@ -6,10 +6,10 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 import argparse
-import json
 import time
 
 import numpy as np
+import orjson
 
 sys.path.insert(0, os.path.abspath("."))
 from src.pipeline import SupportCopilotPipeline
@@ -75,7 +75,7 @@ def main():
             if not line_str:
                 continue
 
-            item = json.loads(line_str)
+            item = orjson.loads(line_str)
 
             # Measure latency per ticket
             t0 = time.perf_counter()
@@ -84,7 +84,7 @@ def main():
             latencies_ms.append(lat_ms)
 
             # Write prediction line
-            out_f.write(json.dumps(pred, ensure_ascii=False) + "\n")
+            out_f.write(orjson.dumps(pred).decode("utf-8") + "\n")
             count += 1
 
             if args.limit and count >= args.limit:

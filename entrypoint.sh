@@ -32,3 +32,4 @@ trap cleanup SIGTERM SIGINT
 
 # Wait for either process to terminate
 wait -n "$FASTAPI_PID" "$STREAMLIT_PID"
+

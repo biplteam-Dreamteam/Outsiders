@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, ORJSONResponse
 from pydantic import BaseModel
 
 # Setup path and logging
@@ -34,6 +34,7 @@ app = FastAPI(
     description="Интеллектуальный сервис триажа, RAG и черновиков ответов для Grand Mobile (Decentrathon 6.0, Case 03)",
     version="1.0.0",
     lifespan=lifespan,
+    default_response_class=ORJSONResponse,
 )
 
 # Pipeline singleton
