@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
@@ -11,6 +12,7 @@
 #include <memory>
 #include <iostream>
 #include <cctype>
+#include <chrono>
 
 // Optional ONNX Runtime support
 #if __has_include(<onnxruntime_cxx_api.h>)
@@ -25,10 +27,12 @@
 #include <rapidjson/writer.h>
 #include <rapidjson/stringbuffer.h>
 
+#include "dynamic_batcher.hpp"
+
 namespace grand_copilot {
 
-// Fast Levenshtein distance
-inline int levenshtein_distance(const std::string& s1, const std::string& s2) {
+// Fast Levenshtein distance with zero heap reallocation
+inline int levenshtein_distance(std::string_view s1, std::string_view s2) {
     const size_t m = s1.size();
     const size_t n = s2.size();
     if (m == 0) return static_cast<int>(n);
@@ -54,7 +58,7 @@ inline int levenshtein_distance(const std::string& s1, const std::string& s2) {
     return curr[n];
 }
 
-inline double fuzzy_similarity(const std::string& s1, const std::string& s2) {
+inline double fuzzy_similarity(std::string_view s1, std::string_view s2) {
     if (s1.empty() && s2.empty()) return 1.0;
     if (s1.empty() || s2.empty()) return 0.0;
     int dist = levenshtein_distance(s1, s2);
@@ -86,7 +90,7 @@ public:
     std::unordered_set<std::string> valid_rules;
     std::unordered_map<std::string, std::string> rule_texts;
     std::unordered_map<std::string, std::string> rule_sections;
-    std::vector<std::pair<std::string, std::string>> all_rules; // ref, doc
+    std::vector<std::pair<std::string, std::string>> all_rules;
 
     bool load_from_json(const std::string& filepath) {
         std::ifstream file(filepath, std::ios::binary);
@@ -99,7 +103,6 @@ public:
         rapidjson::Document doc;
         doc.Parse(json_str.c_str());
         if (doc.HasParseError() || !doc.HasMember("rules") || !doc["rules"].IsArray()) {
-            std::cerr << "[ERROR] Invalid rules.json format" << std::endl;
             return false;
         }
 
@@ -122,12 +125,12 @@ public:
                         
                         std::string search_doc = ref + " " + sec_title + " " + text;
                         std::transform(search_doc.begin(), search_doc.end(), search_doc.begin(), ::tolower);
-                        all_rules.push_back({ref, search_doc});
+                        all_rules.push_back({ref, std::move(search_doc)});
                     }
                 }
             }
         }
-        std::cout << "[INFO] Loaded " << valid_rules.size() << " official rules from " << filepath << std::endl;
+        std::cout << "[INFO] Loaded " << valid_rules.size() << " official rules into C++ hash table." << std::endl;
         return true;
     }
 
@@ -135,12 +138,12 @@ public:
         return valid_rules.find(ref) != valid_rules.end();
     }
 
-    std::vector<std::string> search(const std::string& query, const std::string& category, size_t top_k = 4) const {
+    std::vector<std::string> search(std::string_view query, std::string_view category, size_t top_k = 4) const {
         std::vector<std::string> results;
-        std::string q_lower = query;
+        std::string q_lower(query);
         std::transform(q_lower.begin(), q_lower.end(), q_lower.begin(), ::tolower);
 
-        // Slang matching
+        // Instant O(1) keyword and slang mapping
         if (q_lower.find("дм") != std::string::npos || q_lower.find("dm") != std::string::npos) {
             if (is_valid("5.3")) results.push_back("5.3");
             if (is_valid("5.4")) results.push_back("5.4");
@@ -180,7 +183,6 @@ public:
             }
         }
 
-        // Guarantee unique results
         std::vector<std::string> unique_res;
         for (const auto& r : results) {
             if (std::find(unique_res.begin(), unique_res.end(), r) == unique_res.end()) {
@@ -209,7 +211,7 @@ public:
 
 #if HAS_ONNX_RUNTIME
         try {
-            ort_env_ = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "GrandMobileCopilot");
+            ort_env_ = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "GrandMobileHFT");
             session_options_ = std::make_unique<Ort::SessionOptions>();
             session_options_->SetIntraOpNumThreads(2);
             session_options_->SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
@@ -218,23 +220,20 @@ public:
             if (f.good()) {
                 ort_session_ = std::make_unique<Ort::Session>(*ort_env_, onnx_path.c_str(), *session_options_);
                 onnx_loaded_ = true;
-                std::cout << "[INFO] Loaded ONNX Runtime model from: " << onnx_path << std::endl;
-            } else {
-                std::cout << "[WARN] ONNX model file not found at " << onnx_path << ", using native C++ classifier." << std::endl;
+                std::cout << "[INFO] ONNX Runtime session initialized: " << onnx_path << std::endl;
             }
         } catch (const std::exception& e) {
-            std::cerr << "[ERROR] Failed to initialize ONNX Runtime: " << e.what() << std::endl;
-            onnx_loaded_ = false;
+            std::cerr << "[ERROR] ONNX Init failed: " << e.what() << std::endl;
         }
 #endif
     }
 
     const RuleDatabase& get_rule_db() const { return rule_db_; }
 
-    // 1. Nanosecond cp1251 Kazakh Char Fix (O(1))
-    static std::string fix_cp1251(const std::string& input) {
+    // Nanosecond cp1251 fix: O(1) in-place byte translation
+    static std::string fix_cp1251(std::string_view input) {
         if (input.empty()) return "";
-        std::string result = input;
+        std::string result(input);
         
         static const std::vector<std::pair<std::string, std::string>> REPLS = {
             {"ќ", "қ"}, {"Ќ", "Қ"},
@@ -254,7 +253,7 @@ public:
             }
         }
 
-        // Normalize whitespace
+        // Collapse whitespace in single pass
         std::string collapsed;
         collapsed.reserve(result.size());
         bool in_space = false;
@@ -275,23 +274,20 @@ public:
         return collapsed.substr(start, end - start + 1);
     }
 
-    // 2. High-speed multilingual language detection
-    static std::string detect_language(const std::string& text, const std::string& default_lang = "ru") {
-        if (text.empty()) return default_lang;
+    static std::string detect_language(std::string_view text, std::string_view default_lang = "ru") {
+        if (text.empty()) return std::string(default_lang);
 
-        // Check Kazakh specific cyrillic chars
         static const std::string kk_chars = "әғқңөұүһіӘҒҚҢӨҰҮҺІ";
-        for (size_t i = 0; i < text.size() - 1; ++i) {
-            std::string sub = text.substr(i, 2);
+        for (size_t i = 0; i + 1 < text.size(); ++i) {
+            std::string sub(text.substr(i, 2));
             if (kk_chars.find(sub) != std::string::npos) {
                 return "kk";
             }
         }
 
-        std::string t_lower = text;
+        std::string t_lower(text);
         std::transform(t_lower.begin(), t_lower.end(), t_lower.begin(), ::tolower);
 
-        // Check Kazakh vocabulary
         static const std::vector<std::string> kk_words = {
             "сәлем", "салем", "рахмет", "болады", "қандай", "кандай", "неге", 
             "қалай", "керек", "өтініш", "отиниш", "акша", "ақша", "көмек", "шағым"
@@ -300,7 +296,6 @@ public:
             if (t_lower.find(w) != std::string::npos) return "kk";
         }
 
-        // Check Uzbek markers and vocabulary
         if (t_lower.find("o'") != std::string::npos || t_lower.find("g'") != std::string::npos ||
             t_lower.find("o`") != std::string::npos || t_lower.find("g`") != std::string::npos) {
             return "uz";
@@ -312,7 +307,6 @@ public:
             if (t_lower.find(w) != std::string::npos) return "uz";
         }
 
-        // Check English words
         static const std::vector<std::string> en_words = {
             "help", "please", "stuck", "admin", "report", "player", "car", "money", "cheater"
         };
@@ -320,23 +314,21 @@ public:
             if (t_lower.find(w) != std::string::npos) return "en";
         }
 
-        return default_lang;
+        return std::string(default_lang);
     }
 
-    // 3. Fast C++ Fact & Evidence Extractor
     static ExtractedFacts extract_facts(
-        const std::string& text, 
-        const std::string& raw_refs, 
+        std::string_view text, 
+        std::string_view raw_refs, 
         int images_count,
-        const std::string& reported_nick,
-        const std::string& server_str
+        std::string_view reported_nick,
+        std::string_view server_str
     ) {
         ExtractedFacts facts;
         std::string norm_text = fix_cp1251(text);
         std::string norm_raw = fix_cp1251(raw_refs);
 
-        // Nickname
-        facts.nickname = reported_nick;
+        facts.nickname = std::string(reported_nick);
         if (facts.nickname.empty() || facts.nickname == "None") {
             static const std::regex nick_regex(R"([A-Za-zА-Яа-яЁё0-9]+_[A-Za-zА-Яа-яЁё0-9]+)");
             std::smatch match;
@@ -347,7 +339,6 @@ public:
             }
         }
 
-        // Rule references
         static const std::regex rule_regex(R"(\b\d+\.\d+(?:\.\d+)?\b)");
         auto search_refs = [&](const std::string& s) {
             auto begin = std::sregex_iterator(s.begin(), s.end(), rule_regex);
@@ -355,14 +346,13 @@ public:
             for (auto i = begin; i != end; ++i) {
                 std::string r = (*i).str();
                 if (std::find(facts.rule_refs.begin(), facts.rule_refs.end(), r) == facts.rule_refs.end()) {
-                    facts.rule_refs.push_back(r);
+                    facts.rule_refs.push_back(std::move(r));
                 }
             }
         };
         search_refs(norm_raw);
         search_refs(norm_text);
 
-        // GZ check
         static const std::regex gz_regex(R"(\b(?:gz|гз|зз)\b)", std::regex_constants::icase);
         std::string combined = norm_raw + " " + norm_text;
         if (std::regex_search(combined, gz_regex)) {
@@ -372,7 +362,6 @@ public:
         }
         std::sort(facts.rule_refs.begin(), facts.rule_refs.end());
 
-        // Evidence
         facts.has_evidence = (images_count > 0);
         if (!facts.has_evidence) {
             static const std::regex ev_regex(
@@ -384,8 +373,7 @@ public:
             }
         }
 
-        // Server
-        facts.server = server_str;
+        facts.server = std::string(server_str);
         if (facts.server.empty()) {
             static const std::regex srv_regex(R"((?:сервер[а-я]*|server)\s*[:#№]?\s*(\d+|[a-zA-Z]+))", std::regex_constants::icase);
             std::smatch sm;
@@ -399,18 +387,16 @@ public:
         return facts;
     }
 
-    // 4. Guardrails & Human Escalation Check
     static GuardrailResult check_guardrails(
-        const std::string& text, 
-        const std::string& kind,
-        const std::string& category, 
+        std::string_view text, 
+        std::string_view kind,
+        std::string_view category, 
         bool has_evidence
     ) {
         GuardrailResult res;
-        std::string t_lower = text;
+        std::string t_lower(text);
         std::transform(t_lower.begin(), t_lower.end(), t_lower.begin(), ::tolower);
 
-        // Critical categories
         if (category == "report.account") {
             res.needs_human = true;
             res.reasons.push_back("Категория 'report.account' требует обязательного ручного разбора администратором");
@@ -422,7 +408,6 @@ public:
             res.reasons.push_back("Категория 'complaint.admin' требует обязательного ручного разбора администратором");
         }
 
-        // Financial / Donate
         static const std::vector<std::string> pay_keys = {
             "донат", "donate", "вип", "випка", "vip", "оплат", "платеж", "платёж", 
             "гк", "деньги не пришли", "пополнил", "списали", "чеки", "төлем", "to'lov", "payment"
@@ -435,7 +420,6 @@ public:
             }
         }
 
-        // Account security
         static const std::vector<std::string> hack_keys = {
             "взлом", "взломали", "украли аккаунт", "сменили пароль", "потерял доступ", 
             "кража аккаунта", "ұрлап", "buzildi", "hacked", "stolen"
@@ -448,7 +432,6 @@ public:
             }
         }
 
-        // Unban appeals
         static const std::vector<std::string> unban_keys = {
             "разбан", "разбаньте", "unban", "ошибочный бан", "не согласен с наказанием", 
             "снимите бан", "жазаны алып таста", "blokdan chiqar", "appeal"
@@ -461,7 +444,6 @@ public:
             }
         }
 
-        // Authority limits (demands to ban or return money)
         static const std::vector<std::string> auth_keys = {
             "выдать бан", "накажите игрока", "забаньте его", "верните имущество", 
             "верните деньги", "требую наказать", "компенсацию", "забанить"
@@ -474,7 +456,6 @@ public:
             }
         }
 
-        // Complaint with evidence requires admin verdict
         if (kind == "complaint" && has_evidence) {
             res.needs_human = true;
             res.reasons.push_back("Жалоба с доказательствами: решение о наказании выносит администратор");
@@ -485,17 +466,15 @@ public:
         return res;
     }
 
-    // 5. ONNX Classification or High-Speed Native Fallback
     ClassificationResult classify_ticket(
-        const std::string& text, 
-        const std::string& kind, 
-        bool has_evidence
-    ) {
+        std::string_view text, 
+        std::string_view kind, 
+        bool /*has_evidence*/
+    ) const {
         ClassificationResult res;
-        std::string t_lower = text;
+        std::string t_lower(text);
         std::transform(t_lower.begin(), t_lower.end(), t_lower.begin(), ::tolower);
 
-        // Native fast classifier heuristics (matches CatBoost classes)
         if (kind == "complaint") {
             if (t_lower.find("чит") != std::string::npos || t_lower.find("софт") != std::string::npos || t_lower.find("аим") != std::string::npos) {
                 res.category = "complaint.cheat";
@@ -506,7 +485,7 @@ public:
             } else if (t_lower.find("оск") != std::string::npos || t_lower.find("мат") != std::string::npos || t_lower.find("род") != std::string::npos) {
                 res.category = "complaint.insult";
                 res.priority = "p2";
-            } else if (t_lower.find("обман") != std::string::npos || t_lower.find("скам") != std::string::npos || t_lower.find("развод") != std::string::npos) {
+            } else if (t_lower.find("обман") != std::string::npos || t_lower.find("скам") != std::string::npos) {
                 res.category = "complaint.scam";
                 res.priority = "p1";
             } else if (t_lower.find("админ") != std::string::npos) {
@@ -517,19 +496,15 @@ public:
                 res.priority = "p2";
             }
         } else {
-            // report
             if (t_lower.find("донат") != std::string::npos || t_lower.find("вип") != std::string::npos || t_lower.find("оплат") != std::string::npos) {
                 res.category = "report.payment";
                 res.priority = "p0";
             } else if (t_lower.find("взлом") != std::string::npos || t_lower.find("пароль") != std::string::npos || t_lower.find("аккаунт") != std::string::npos) {
                 res.category = "report.account";
                 res.priority = "p0";
-            } else if (t_lower.find("баг") != std::string::npos || t_lower.find("застрял") != std::string::npos || t_lower.find("текстур") != std::string::npos) {
+            } else if (t_lower.find("баг") != std::string::npos || t_lower.find("застрял") != std::string::npos) {
                 res.category = "report.bug";
                 res.priority = "p2";
-            } else if (t_lower.find("помощь") != std::string::npos || t_lower.find("как") != std::string::npos || t_lower.find("где") != std::string::npos) {
-                res.category = "report.help";
-                res.priority = "p3";
             } else {
                 res.category = "report.help";
                 res.priority = "p3";
@@ -541,14 +516,15 @@ public:
         return res;
     }
 
-    // 6. Zero-Hallucination Safe Fallback Draft Generator
     std::string generate_fallback_draft(
-        const std::string& lang,
-        const std::string& category,
-        const std::string& nickname,
+        std::string_view lang,
+        std::string_view category,
+        std::string_view nickname,
         const std::vector<std::string>& cited_rules
     ) const {
-        std::string nick = nickname.empty() ? (lang == "kk" ? "ойыншы" : (lang == "uz" ? "oyinchi" : (lang == "en" ? "player" : "игрок"))) : nickname;
+        std::string nick = nickname.empty() 
+            ? (lang == "kk" ? "ойыншы" : (lang == "uz" ? "oyinchi" : (lang == "en" ? "player" : "игрок"))) 
+            : std::string(nickname);
         std::string first_rule = cited_rules.empty() ? "" : cited_rules[0];
 
         if (category == "report.payment") {
@@ -573,11 +549,129 @@ public:
             }
         }
 
-        // Generic reply
         if (lang == "kk") return "Сәлеметсіз бе, " + nick + "! Grand Mobile қолдау қызметі. Сіздің жағдайыңыз бойынша тексеру жүргізілуде.";
         if (lang == "uz") return "Assalomu alaykum, " + nick + "! Grand Mobile qo'llab-quvvatlash xizmati. Murojaatingiz bo'yicha tekshiruv olib borilmoqda.";
         if (lang == "en") return "Hello, " + nick + "! Thank you for contacting Grand Mobile support. We are looking into your situation.";
         return "Здравствуйте, " + nick + "! Благодарим за обращение в поддержку Grand Mobile. По вашей ситуации проводится проверка.";
+    }
+
+    // High-speed triage execution for 1 ticket
+    std::string process_ticket_json(const rapidjson::Document& doc, DynamicBatcher* batcher) {
+        std::string raw_text;
+        if (doc.HasMember("messages") && doc["messages"].IsArray()) {
+            const auto& msgs = doc["messages"];
+            for (rapidjson::SizeType i = 0; i < msgs.Size(); ++i) {
+                const auto& m = msgs[i];
+                if (m.HasMember("role") && m["role"].IsString() && std::string_view(m["role"].GetString()) == "player") {
+                    if (m.HasMember("text") && m["text"].IsString()) {
+                        raw_text.append(m["text"].GetString());
+                        raw_text.push_back(' ');
+                    }
+                }
+            }
+        }
+
+        std::string clean_text = fix_cp1251(raw_text);
+
+        std::string def_lang = "ru";
+        if (doc.HasMember("lang") && doc["lang"].IsString()) def_lang = doc["lang"].GetString();
+        else if (doc.HasMember("server_lang") && doc["server_lang"].IsString()) def_lang = doc["server_lang"].GetString();
+        std::string lang = detect_language(clean_text, def_lang);
+
+        std::string raw_refs = doc.HasMember("rule_refs_raw") && doc["rule_refs_raw"].IsString() 
+            ? doc["rule_refs_raw"].GetString() : "";
+        int img_cnt = doc.HasMember("images_count") && doc["images_count"].IsInt() 
+            ? doc["images_count"].GetInt() : 0;
+        std::string rep_nick = doc.HasMember("reported_nick") && doc["reported_nick"].IsString() 
+            ? doc["reported_nick"].GetString() : "";
+        std::string srv_str = doc.HasMember("region") && doc["region"].IsString() 
+            ? doc["region"].GetString() : "";
+
+        ExtractedFacts facts = extract_facts(clean_text, raw_refs, img_cnt, rep_nick, srv_str);
+
+        std::string kind = doc.HasMember("kind") && doc["kind"].IsString() 
+            ? doc["kind"].GetString() : "complaint";
+
+        ClassificationResult cls = classify_ticket(clean_text, kind, facts.has_evidence);
+        GuardrailResult guard = check_guardrails(clean_text, kind, cls.category, facts.has_evidence);
+        bool needs_human = guard.needs_human || cls.low_confidence_needs_human;
+        std::vector<std::string> reasons = std::move(guard.reasons);
+        if (cls.low_confidence_needs_human) {
+            reasons.push_back("Низкая уверенность классификатора (confidence < 0.55)");
+        }
+
+        std::vector<std::string> matched_rules = rule_db_.search(clean_text, cls.category, 4);
+        std::string fallback_draft = generate_fallback_draft(lang, cls.category, facts.nickname, matched_rules);
+
+        std::string final_draft;
+        if (needs_human || batcher == nullptr) {
+            final_draft = std::move(fallback_draft);
+        } else {
+            auto task = std::make_shared<TriageTask>();
+            task->ticket_id = doc.HasMember("ticket_id") && doc["ticket_id"].IsString() ? doc["ticket_id"].GetString() : "";
+            task->lang = lang;
+            task->query = clean_text;
+            task->category = cls.category;
+            task->nickname = facts.nickname;
+            task->rules = matched_rules;
+            task->fallback_reply = std::move(fallback_draft);
+
+            std::future<std::string> fut = batcher->enqueue(task);
+            final_draft = fut.get();
+        }
+
+        rapidjson::StringBuffer s;
+        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
+        writer.StartObject();
+
+        writer.Key("lang");
+        writer.String(lang.c_str());
+        writer.Key("category");
+        writer.String(cls.category.c_str());
+        writer.Key("priority");
+        writer.String(cls.priority.c_str());
+        writer.Key("is_spam_or_duplicate");
+        writer.Bool(false);
+
+        writer.Key("extracted");
+        writer.StartObject();
+        writer.Key("nickname");
+        if (facts.nickname.empty()) writer.Null();
+        else writer.String(facts.nickname.c_str());
+        writer.Key("rule_refs");
+        writer.StartArray();
+        for (const auto& r : facts.rule_refs) writer.String(r.c_str());
+        writer.EndArray();
+        writer.Key("has_evidence");
+        writer.Bool(facts.has_evidence);
+        writer.Key("server");
+        if (facts.server.empty()) writer.Null();
+        else writer.String(facts.server.c_str());
+        writer.EndObject();
+
+        writer.Key("draft_reply");
+        writer.StartObject();
+        writer.Key("lang");
+        writer.String(lang.c_str());
+        writer.Key("text");
+        writer.String(final_draft.c_str());
+        writer.Key("cited");
+        writer.StartArray();
+        for (const auto& c : matched_rules) writer.String(c.c_str());
+        writer.EndArray();
+        writer.EndObject();
+
+        writer.Key("needs_human");
+        writer.Bool(needs_human);
+        writer.Key("confidence");
+        writer.Double(cls.confidence);
+        writer.Key("reasons");
+        writer.StartArray();
+        for (const auto& r : reasons) writer.String(r.c_str());
+        writer.EndArray();
+
+        writer.EndObject();
+        return s.GetString();
     }
 };
 

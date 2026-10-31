@@ -43,8 +43,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy only the compiled binary from builder
+# Copy compiled binaries from builder
 COPY --from=builder /build/build/grand_mobile_server /app/grand_mobile_server
+COPY --from=builder /build/build/benchmark_tool /app/benchmark_tool
 
 # Copy essential knowledge base and model assets
 COPY rules.json taxonomy.json ./
@@ -59,3 +60,4 @@ HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
 
 # Start native C++ server
 ENTRYPOINT ["/app/grand_mobile_server"]
+

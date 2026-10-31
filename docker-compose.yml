@@ -16,7 +16,7 @@ services:
       retries: 5
       start_period: 5s
 
-  # Pure C++20 High-Performance Production Backend (Crow + ONNX + Dynamic Batching)
+  # Pure C++20 High-Frequency Production Backend (Crow + ONNX + Dynamic Batching 3ms)
   cpp_backend:
     build:
       context: .
@@ -39,22 +39,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
-
-  # Lightweight Streamlit Admin UI with RLHF
-  admin_ui:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: grand-copilot-admin-ui
-    restart: unless-stopped
-    ports:
-      - "8501:8501"
-    command: ["python", "-m", "streamlit", "run", "admin_ui.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
-    volumes:
-      - ./data:/app/data
-      - ./models:/app/models
-    depends_on:
-      - cpp_backend
 
 volumes:
   ollama_models:

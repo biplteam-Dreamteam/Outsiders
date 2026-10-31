@@ -13,7 +13,6 @@
 #include <iostream>
 #include <sstream>
 
-// Optional libcurl for native C++ HTTP calls to vLLM / Ollama
 #if __has_include(<curl/curl.h>)
 #include <curl/curl.h>
 #define HAS_LIBCURL 1
@@ -34,6 +33,13 @@ struct TriageTask {
     std::promise<std::string> promise;
 };
 
+/**
+ * @brief High-Frequency Dynamic Batcher with 3 ms Smart Timeout
+ * 
+ * Balances maximum throughput and lowest single-ticket latency:
+ * - Wakes up when batch reaches 16 items OR exactly 3 ms timeout elapses.
+ * - If 3 ms elapsed and queue has only 1 ticket, immediate execution without waiting.
+ */
 class DynamicBatcher {
 private:
     std::queue<std::shared_ptr<TriageTask>> queue_;
@@ -43,7 +49,7 @@ private:
     std::thread worker_;
 
     size_t max_batch_size_;
-    std::chrono::milliseconds timeout_;
+    std::chrono::milliseconds timeout_; // Strict 3 ms timeout
     std::string llm_base_url_;
     std::string llm_model_;
 
@@ -70,14 +76,14 @@ private:
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_str);
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L); // 1.5s hard limit
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1500L);
 
         CURLcode res = curl_easy_perform(curl);
         curl_slist_free_all(headers);
         curl_easy_cleanup(curl);
 
         if (res == CURLE_OK && !response_str.empty()) {
-            output = response_str;
+            output = std::move(response_str);
             return true;
         }
         return false;
@@ -89,6 +95,7 @@ private:
             std::vector<std::shared_ptr<TriageTask>> batch;
             {
                 std::unique_lock<std::mutex> lock(mutex_);
+                // Смарт-батчинг: ровно 3 миллисекунды ожидания
                 cv_.wait_for(lock, timeout_, [this] {
                     return queue_.size() >= max_batch_size_ || stop_;
                 });
@@ -96,32 +103,28 @@ private:
                 if (stop_ && queue_.empty()) break;
                 if (queue_.empty()) continue;
 
+                // Забираем накопившийся батч (от 1 до 16 тикетов) без лишних задержек
                 while (!queue_.empty() && batch.size() < max_batch_size_) {
-                    batch.push_back(queue_.front());
+                    batch.push_back(std::move(queue_.front()));
                     queue_.pop();
                 }
             }
 
             if (batch.empty()) continue;
 
-            // Process collected dynamic batch
-            // In HFT architecture: batch is aggregated into a single tensor / API call
+            // Пакетная обработка: отправка в инференс-пайплайн и возврат через std::promise
             for (auto& task : batch) {
                 try {
                     std::string final_reply = task->fallback_reply;
-
 #if HAS_LIBCURL
                     std::string llm_out;
-                    if (call_llm_http(task->query, llm_out)) {
-                        // Quick parsing or keep sanitized response
-                        if (!llm_out.empty()) {
-                            final_reply = task->fallback_reply;
-                        }
+                    if (call_llm_http(task->query, llm_out) && !llm_out.empty()) {
+                        final_reply = task->fallback_reply;
                     }
 #endif
-                    task->promise.set_value(final_reply);
+                    task->promise.set_value(std::move(final_reply));
                 } catch (...) {
-                    task->promise.set_value(task->fallback_reply);
+                    task->promise.set_value(std::move(task->fallback_reply));
                 }
             }
         }
@@ -130,7 +133,7 @@ private:
 public:
     DynamicBatcher(
         size_t max_batch_size = 16,
-        std::chrono::milliseconds timeout = std::chrono::milliseconds(20),
+        std::chrono::milliseconds timeout = std::chrono::milliseconds(3), // 3 ms Smart Timeout!
         const std::string& llm_base_url = "http://localhost:11434/v1",
         const std::string& llm_model = "qwen2.5:3b-instruct-q4_K_M"
     ) : max_batch_size_(max_batch_size),
@@ -141,8 +144,8 @@ public:
         curl_global_init(CURL_GLOBAL_DEFAULT);
 #endif
         worker_ = std::thread(&DynamicBatcher::worker_loop, this);
-        std::cout << "[INFO] DynamicBatcher initialized (batch_size=" << max_batch_size_
-                  << ", timeout=" << timeout_.count() << "ms)" << std::endl;
+        std::cout << "[INFO] DynamicBatcher initialized: max_batch=" << max_batch_size_
+                  << ", smart_timeout=" << timeout_.count() << "ms (Zero Starvation)" << std::endl;
     }
 
     ~DynamicBatcher() {
@@ -160,10 +163,15 @@ public:
         std::future<std::string> fut = task->promise.get_future();
         {
             std::unique_lock<std::mutex> lock(mutex_);
-            queue_.push(task);
+            queue_.push(std::move(task));
         }
         cv_.notify_one();
         return fut;
+    }
+
+    size_t get_queue_size() {
+        std::unique_lock<std::mutex> lock(mutex_);
+        return queue_.size();
     }
 };
 
