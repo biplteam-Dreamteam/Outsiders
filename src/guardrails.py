@@ -175,43 +175,55 @@ def check_guardrails(
     ticket: dict[str, Any], text: str, category: str, has_evidence: bool = False
 ) -> tuple[bool, list[str]]:
     """
-    Проверяет жесткие критерии безопасности.
-    Возвращает (needs_human, reasons).
+    ЭТАП 2: Логика эскалации тикета живому человеку (Human-in-the-Loop).
+    Тикет передается оператору (needs_human = True) в 3 ключевых случаях:
+    
+    1. GUARDRAILS (Критичные темы):
+       - Финансовые операции / донат / VIP-покупки (PAYMENT_KEYWORDS).
+       - Взлом или кража аккаунта, потеря доступа (HACK_KEYWORDS).
+       - Обжалование или апелляция блокировки (UNBAN_APPEAL_KEYWORDS).
+       - Обязательные чувствительные категории таксономии (HUMAN_REQUIRED_CATEGORIES).
+       
+    2. ОГРАНИЧЕНИЯ ПОЛНОМОЧИЙ (ИИ не имеет прав судьи):
+       - Игрок требует наказать/забанить другого игрока (PUNISHMENT_DECISION_KEYWORDS).
+       - Игрок требует вернуть имущество / возместить деньги (PUNISHMENT_DECISION_KEYWORDS).
+       - Жалоба содержит доказательства (/time, скрин, видео), требующие вердикта администратора.
+       
+    3. НЕУВЕРЕННОСТЬ МОДЕЛИ:
+       - Дополнительно проверяется в classifier.py: если confidence < 0.55.
+    
+    Возвращает:
+        (needs_human: bool, reasons: list[str])
     """
     needs_human = False
     reasons: list[str] = []
     text_lower = text.lower()
 
-    # 1. Mandatory categories from taxonomy
+    # СЛУЧАЙ 1: Критичные темы (Guardrails)
     if category in HUMAN_REQUIRED_CATEGORIES:
         needs_human = True
         reasons.append(
             f"Категория '{category}' требует обязательного ручного разбора администратором"
         )
 
-    # 2. Payment & Donates
     if any(k in text_lower for k in PAYMENT_KEYWORDS):
         needs_human = True
         reasons.append("Вопрос касается финансовых операций / доната / платежей")
 
-    # 3. Account theft & Hacks
     if any(k in text_lower for k in HACK_KEYWORDS):
         needs_human = True
         reasons.append("Обращение связано со взломом или потерей доступа к аккаунту")
 
-    # 4. Ban appeals
     if any(k in text_lower for k in UNBAN_APPEAL_KEYWORDS):
         needs_human = True
         reasons.append("Запрос на апелляцию блокировки или пересмотр наказания")
 
-    # 5. Demands of punishment / refunds (Admin verdict required)
+    # СЛУЧАЙ 2: Ограничения полномочий ИИ (вердикты, баны, компенсации)
     if any(k in text_lower for k in PUNISHMENT_DECISION_KEYWORDS):
         needs_human = True
-        reasons.append("Решение о наказании/возврате подтверждает администратор")
+        reasons.append("Запрос вердикта/наказания/возврата: решение подтверждает администратор")
 
-    # 6. Complaint with evidence demanding action
     if ticket.get("kind") == "complaint" and has_evidence:
-        # Complaints with evidence require administrator decision to impose sanctions
         needs_human = True
         reasons.append(
             "Жалоба с доказательствами: решение о наказании выносит администратор"

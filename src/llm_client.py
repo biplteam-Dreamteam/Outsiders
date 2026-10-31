@@ -64,6 +64,8 @@ class LLMClient:
         self.model = model
         self.timeout = timeout
         self.last_failure_time: float = 0.0
+        self.circuit_breaker_ttl: float = CIRCUIT_BREAKER_TTL
+        self._is_probing: bool = False
         # Persistent async client with connection pooling
         self._client: httpx.AsyncClient | None = None
 
@@ -187,8 +189,8 @@ class LLMClient:
         4. При таймауте, ошибке или сбое языка мгновенно активирует чистый localized fallback
         """
         now = time.time()
-        # Circuit Breaker: if LLM server failed in the last 10s, don't wait for timeout
-        if (now - self.last_failure_time) < CIRCUIT_BREAKER_TTL:
+        # Circuit Breaker: if LLM server failed in the last TTL seconds or already probing, immediately fallback
+        if (now - self.last_failure_time) < self.circuit_breaker_ttl or self._is_probing:
             return self.generate_fallback(
                 lang, ticket, category, retrieved_rules, nickname
             )
@@ -241,8 +243,10 @@ class LLMClient:
                 "max_tokens": 80,
                 "temperature": 0.2,
             }
+            self._is_probing = True
             resp = await client.post(f"{self.base_url}/chat/completions", json=payload)
             if resp.status_code == 200:
+                self.circuit_breaker_ttl = CIRCUIT_BREAKER_TTL
                 data = resp.json()
                 content = data["choices"][0]["message"]["content"].strip()
                 # Clean reasoning / CoT leakages if any
@@ -260,7 +264,10 @@ class LLMClient:
                         "cited": cited,
                     }
         except Exception:
-            # Mark failure for circuit breaker
+            # Mark failure for circuit breaker with backoff
             self.last_failure_time = time.time()
+            self.circuit_breaker_ttl = min(60.0, self.circuit_breaker_ttl * 2)
+        finally:
+            self._is_probing = False
 
         return self.generate_fallback(lang, ticket, category, retrieved_rules, nickname)

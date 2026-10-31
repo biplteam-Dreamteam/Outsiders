@@ -302,10 +302,10 @@ class RAGEngine:
                 if r in self.rules_dict and r not in results:
                     results[r] = True
 
-        # 5. TF-IDF retrieval if needed
+        # 5. Fast sparse TF-IDF dot-product retrieval if needed
         if len(results) < top_k and self.vectorizer is not None and query_lower.strip():
             query_vec = self.vectorizer.transform([query_lower])
-            sims = cosine_similarity(query_vec, self.tfidf_matrix)[0]
+            sims = self.tfidf_matrix.dot(query_vec.T).toarray().ravel()
             top_indices = sims.argsort()[::-1]
             for idx in top_indices:
                 if len(results) >= top_k:

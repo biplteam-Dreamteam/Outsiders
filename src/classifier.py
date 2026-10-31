@@ -373,6 +373,8 @@ class TicketClassifier:
             text=combined_text, kind=kind, images_count=img_cnt
         )
         confidence = preds["confidence"]
+        # СЛУЧАЙ 3 (Неуверенность модели): Если классификатор не уверен в категории (confidence < 0.55),
+        # тикет обязательно маркируется для передачи живому администратору (needs_human = True).
         needs_human_conf = confidence < 0.55
 
         return {

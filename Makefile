@@ -55,6 +55,9 @@ stress:
 profile:
 	python src/run_profiler.py
 
+load-test:
+	python src/load_test.py --count 50000 --concurrency 50
+
 docker-build:
 	docker compose build
 

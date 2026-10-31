@@ -76,11 +76,11 @@ class TicketDeduplicator:
                     is_spam_or_duplicate = True
                     break
 
-        # Record current ticket into history
+        # Record current ticket into history (capped to last 10)
         valid_history.append(
             {"ts": current_ts, "text": text, "ticket_id": ticket.get("ticket_id")}
         )
-        self.history[reporter] = valid_history
+        self.history[reporter] = valid_history[-10:]
 
         return is_spam_or_duplicate
 
