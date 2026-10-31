@@ -5,12 +5,12 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Maximum HFT Optimization Flags: -O3 -march=native -flto -DNDEBUG
+# Maximum HFT Optimization Flags: -O3 -march=native -mtune=native -flto -funroll-loops -fno-plt -DNDEBUG
 if(MSVC)
     add_compile_options(/O2 /arch:AVX2 /GL /DNDEBUG /W3)
     add_link_options(/LTCG)
 else()
-    add_compile_options(-O3 -march=native -flto -DNDEBUG -Wall -Wextra -pthread)
+    add_compile_options(-O3 -march=native -mtune=native -flto -funroll-loops -fno-plt -DNDEBUG -Wall -Wextra -pthread)
     add_link_options(-flto)
 endif()
 

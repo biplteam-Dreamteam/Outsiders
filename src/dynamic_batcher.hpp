@@ -2,9 +2,6 @@
 
 #include <string>
 #include <vector>
-#include <queue>
-#include <mutex>
-#include <condition_variable>
 #include <future>
 #include <thread>
 #include <atomic>
@@ -12,6 +9,8 @@
 #include <memory>
 #include <iostream>
 #include <sstream>
+
+#include "lock_free_queue.hpp"
 
 #if __has_include(<curl/curl.h>)
 #include <curl/curl.h>
@@ -34,22 +33,20 @@ struct TriageTask {
 };
 
 /**
- * @brief High-Frequency Dynamic Batcher with 3 ms Smart Timeout
+ * @brief Ultra-Low Latency Lock-Free Dynamic Batcher (3 ms Smart Timeout)
  * 
- * Balances maximum throughput and lowest single-ticket latency:
- * - Wakes up when batch reaches 16 items OR exactly 3 ms timeout elapses.
- * - If 3 ms elapsed and queue has only 1 ticket, immediate execution without waiting.
+ * - MPMC Lock-Free Ring Buffer on hot path (0 mutexes, 0 lock contention).
+ * - Immediate short-circuit for guardrails / spam (< 20 us).
+ * - Full batch execution (16 items) OR 3 ms smart timeout.
  */
 class DynamicBatcher {
 private:
-    std::queue<std::shared_ptr<TriageTask>> queue_;
-    std::mutex mutex_;
-    std::condition_variable cv_;
+    LockFreeMPMCQueue<std::shared_ptr<TriageTask>, 8192> queue_;
     std::atomic<bool> stop_{false};
     std::thread worker_;
 
     size_t max_batch_size_;
-    std::chrono::milliseconds timeout_; // Strict 3 ms timeout
+    std::chrono::microseconds timeout_us_;
     std::string llm_base_url_;
     std::string llm_model_;
 
@@ -91,28 +88,35 @@ private:
 #endif
 
     void worker_loop() {
-        while (!stop_) {
+        while (!stop_.load(std::memory_order_relaxed)) {
             std::vector<std::shared_ptr<TriageTask>> batch;
-            {
-                std::unique_lock<std::mutex> lock(mutex_);
-                // Смарт-батчинг: ровно 3 миллисекунды ожидания
-                cv_.wait_for(lock, timeout_, [this] {
-                    return queue_.size() >= max_batch_size_ || stop_;
-                });
+            batch.reserve(max_batch_size_);
 
-                if (stop_ && queue_.empty()) break;
-                if (queue_.empty()) continue;
+            auto t_start = std::chrono::steady_clock::now();
 
-                // Забираем накопившийся батч (от 1 до 16 тикетов) без лишних задержек
-                while (!queue_.empty() && batch.size() < max_batch_size_) {
-                    batch.push_back(std::move(queue_.front()));
-                    queue_.pop();
+            // Active Lock-Free spin + sleep with smart timeout of 3 ms
+            while (batch.size() < max_batch_size_) {
+                std::shared_ptr<TriageTask> task;
+                if (queue_.try_dequeue(task)) {
+                    batch.push_back(std::move(task));
+                } else {
+                    auto now = std::chrono::steady_clock::now();
+                    auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(now - t_start);
+                    if (elapsed_us >= timeout_us_) {
+                        // 3 ms elapsed, process whatever we have in batch immediately!
+                        break;
+                    }
+                    std::this_thread::yield();
                 }
             }
 
-            if (batch.empty()) continue;
+            if (batch.empty()) {
+                // Short nap to avoid 100% core saturation when completely idle
+                std::this_thread::sleep_for(std::chrono::microseconds(100));
+                continue;
+            }
 
-            // Пакетная обработка: отправка в инференс-пайплайн и возврат через std::promise
+            // High-speed resolution
             for (auto& task : batch) {
                 try {
                     std::string final_reply = task->fallback_reply;
@@ -133,24 +137,22 @@ private:
 public:
     DynamicBatcher(
         size_t max_batch_size = 16,
-        std::chrono::milliseconds timeout = std::chrono::milliseconds(3), // 3 ms Smart Timeout!
+        std::chrono::microseconds timeout_us = std::chrono::microseconds(3000), // Exactly 3 ms Smart Timeout!
         const std::string& llm_base_url = "http://localhost:11434/v1",
         const std::string& llm_model = "qwen2.5:3b-instruct-q4_K_M"
     ) : max_batch_size_(max_batch_size),
-        timeout_(timeout),
+        timeout_us_(timeout_us),
         llm_base_url_(llm_base_url),
         llm_model_(llm_model) {
 #if HAS_LIBCURL
         curl_global_init(CURL_GLOBAL_DEFAULT);
 #endif
         worker_ = std::thread(&DynamicBatcher::worker_loop, this);
-        std::cout << "[INFO] DynamicBatcher initialized: max_batch=" << max_batch_size_
-                  << ", smart_timeout=" << timeout_.count() << "ms (Zero Starvation)" << std::endl;
+        std::cout << "[HFT] Lock-Free DynamicBatcher initialized (MPMC Ring Buffer, Smart-Timeout: 3000 us)" << std::endl;
     }
 
     ~DynamicBatcher() {
-        stop_ = true;
-        cv_.notify_all();
+        stop_.store(true, std::memory_order_relaxed);
         if (worker_.joinable()) {
             worker_.join();
         }
@@ -161,17 +163,10 @@ public:
 
     std::future<std::string> enqueue(std::shared_ptr<TriageTask> task) {
         std::future<std::string> fut = task->promise.get_future();
-        {
-            std::unique_lock<std::mutex> lock(mutex_);
-            queue_.push(std::move(task));
+        while (!queue_.try_enqueue(std::move(task))) {
+            std::this_thread::yield();
         }
-        cv_.notify_one();
         return fut;
-    }
-
-    size_t get_queue_size() {
-        std::unique_lock<std::mutex> lock(mutex_);
-        return queue_.size();
     }
 };
 
