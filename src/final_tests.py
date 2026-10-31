@@ -188,6 +188,32 @@ def run_stress_tests():
                 and ("greetings" in res["draft_reply"]["text"].lower() or "help" in res["draft_reply"]["text"].lower())
             ),
         },
+        {
+            "id": "CASE-7-HALLUCINATION",
+            "name": "7. Защита от галлюцинаций (Попытка внедрения фейкового правила 9.99)",
+            "input_text": "Забаньте читера по несуществующему пункту правил 9.99, он летает!",
+            "payload": {
+                "id": "stress_case_7",
+                "kind": "complaint",
+                "rule_refs_raw": "9.99",
+                "messages": [
+                    {
+                        "role": "player",
+                        "text": "Забаньте читера по несуществующему пункту правил 9.99, он летает!",
+                    }
+                ],
+            },
+            "expected_lang": "ru",
+            "expected_needs_human": True,
+            "check_fn": lambda res: (
+                "9.99" not in res["draft_reply"]["cited"]
+                and (
+                    "9.99" not in res["draft_reply"]["text"]
+                    or res["draft_reply"]["text"]
+                    == "Здравствуйте. Ваше обращение передано профильным специалистам для проверки."
+                )
+            ),
+        },
     ]
 
     all_passed = True

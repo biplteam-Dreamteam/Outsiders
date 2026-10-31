@@ -15,7 +15,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("copilot-api")
 
+from src.guardrails import sanitize_draft
 from src.pipeline import SupportCopilotPipeline
+from src.rag_engine import RuleValidator
+
+# Initialize RuleValidator singleton for Level 2 & 3 verification
+rule_validator = RuleValidator("rules.json")
 
 
 @asynccontextmanager
@@ -129,6 +134,10 @@ async def triage_endpoint(ticket: TicketRequest):
     try:
         ticket_dict = ticket.model_dump()
         result = await pipeline.triage_ticket_async(ticket_dict)
+        # УРОВЕНЬ 3: Параноидальный Пост-Чекер перед отдачей финального JSON пользователю
+        result["draft_reply"] = sanitize_draft(
+            result["draft_reply"], rule_validator.get_valid_rules()
+        )
         return result
     except Exception as exc:
         logger.error(f"Unexpected error in triage: {exc}", exc_info=True)

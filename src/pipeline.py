@@ -102,8 +102,8 @@ class SupportCopilotPipeline:
             )
 
         # 9. Sanitize draft (Anti-hallucination filter)
-        clean_draft_text, clean_cited = sanitize_draft(
-            draft_raw["text"], draft_raw["cited"], self.rag.get_valid_rules_dict()
+        sanitized_draft = sanitize_draft(
+            draft_raw, self.rag.validator.get_valid_rules()
         )
 
         return {
@@ -112,11 +112,7 @@ class SupportCopilotPipeline:
             "priority": priority,
             "is_spam_or_duplicate": is_spam,
             "extracted": extracted,
-            "draft_reply": {
-                "lang": draft_raw.get("lang", lang),
-                "text": clean_draft_text,
-                "cited": clean_cited,
-            },
+            "draft_reply": sanitized_draft,
             "needs_human": needs_human,
             "confidence": confidence,
             "reasons": sorted(list(set(reasons))),
@@ -183,8 +179,8 @@ class SupportCopilotPipeline:
         )
 
         # 9. Sanitize draft (Anti-hallucination filter)
-        clean_draft_text, clean_cited = sanitize_draft(
-            draft_raw["text"], draft_raw["cited"], self.rag.get_valid_rules_dict()
+        sanitized_draft = sanitize_draft(
+            draft_raw, self.rag.validator.get_valid_rules()
         )
 
         return {
@@ -193,11 +189,7 @@ class SupportCopilotPipeline:
             "priority": priority,
             "is_spam_or_duplicate": is_spam,
             "extracted": extracted,
-            "draft_reply": {
-                "lang": draft_raw.get("lang", lang),
-                "text": clean_draft_text,
-                "cited": clean_cited,
-            },
+            "draft_reply": sanitized_draft,
             "needs_human": needs_human,
             "confidence": confidence,
             "reasons": sorted(list(set(reasons))),

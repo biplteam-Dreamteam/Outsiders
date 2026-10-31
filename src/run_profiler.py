@@ -242,3 +242,4 @@ async def profile_pipeline(sample_size: int = 100, input_path: str = "tickets_va
 
 if __name__ == "__main__":
     asyncio.run(profile_pipeline())
+

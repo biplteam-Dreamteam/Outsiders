@@ -89,6 +89,74 @@ CATEGORY_RULES_MAP = {
 }
 
 
+class RuleValidator:
+    """
+    УРОВЕНЬ 2: Валидация базы знаний (RAG Engine)
+    - Загружает rules.json в память при старте сервера
+    - Собирает все валидные ключи пунктов правил (например: '2.1', '3.4') в set() для O(1) проверки
+    """
+
+    def __init__(self, rules_path: str = "rules.json"):
+        self.rules_path = rules_path
+        self._valid_rules: set[str] = set()
+        self._rules_dict: dict[str, dict[str, Any]] = {}
+        self._points_list: list[dict[str, Any]] = []
+        self._load_rules()
+
+    def _load_rules(self) -> None:
+        if not os.path.exists(self.rules_path):
+            return
+        try:
+            with open(self.rules_path, "rb") as f:
+                data = orjson.loads(f.read())
+        except Exception:
+            import json
+            with open(self.rules_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+        for section in data.get("rules", []):
+            section_title = section.get("category", "")
+            section_id = section.get("id")
+            for pt in section.get("points", []):
+                ref = str(pt.get("ref", "")).strip()
+                text = str(pt.get("text", "")).strip()
+                if not ref or not text:
+                    continue
+
+                self._valid_rules.add(ref)
+                item = {
+                    "ref": ref,
+                    "section_id": section_id,
+                    "section": section_title,
+                    "text": text,
+                    "search_doc": f"{ref} {section_title} {text}".lower(),
+                }
+                if ref not in self._rules_dict:
+                    self._rules_dict[ref] = item
+                self._points_list.append(item)
+
+    def get_valid_rules(self) -> set[str]:
+        """Возвращает set всех проверенных ключей пунктов правил для O(1) проверки."""
+        return self._valid_rules
+
+    def is_valid(self, ref: str) -> bool:
+        """Мгновенно валидирует пункт правил за O(1)."""
+        return str(ref).strip() in self._valid_rules
+
+    def get_rules_dict(self) -> dict[str, dict[str, Any]]:
+        """Возвращает справочник пунктов правил."""
+        return self._rules_dict
+
+    def get_points_list(self) -> list[dict[str, Any]]:
+        return self._points_list
+
+    def __contains__(self, ref: str) -> bool:
+        return str(ref).strip() in self._valid_rules
+
+    def __len__(self) -> int:
+        return len(self._valid_rules)
+
+
 _GLOBAL_RAG_CACHE: dict[str, Any] = {}
 
 
@@ -98,32 +166,9 @@ def get_or_load_rag_index(rules_path: str = "rules.json") -> dict[str, Any]:
     if rules_path in _GLOBAL_RAG_CACHE:
         return _GLOBAL_RAG_CACHE[rules_path]
 
-    rules_dict: dict[str, dict[str, Any]] = {}
-    points_list: list[dict[str, Any]] = []
-
-    if os.path.exists(rules_path):
-        with open(rules_path, "rb") as f:
-            data = orjson.loads(f.read())
-
-        for rule_section in data.get("rules", []):
-            section_title = rule_section.get("category", "")
-            section_id = rule_section.get("id")
-            for pt in rule_section.get("points", []):
-                ref = str(pt.get("ref", "")).strip()
-                text = pt.get("text", "").strip()
-                if not ref or not text:
-                    continue
-
-                item = {
-                    "ref": ref,
-                    "section_id": section_id,
-                    "section": section_title,
-                    "text": text,
-                    "search_doc": f"{ref} {section_title} {text}".lower(),
-                }
-                if ref not in rules_dict:
-                    rules_dict[ref] = item
-                points_list.append(item)
+    validator = RuleValidator(rules_path)
+    rules_dict = validator.get_rules_dict()
+    points_list = validator.get_points_list()
 
     vectorizer = None
     tfidf_matrix = None
@@ -133,6 +178,7 @@ def get_or_load_rag_index(rules_path: str = "rules.json") -> dict[str, Any]:
         tfidf_matrix = vectorizer.fit_transform(docs)
 
     cached_entry = {
+        "validator": validator,
         "rules_dict": rules_dict,
         "points_list": points_list,
         "vectorizer": vectorizer,
@@ -154,6 +200,7 @@ class RAGEngine:
     def __init__(self, rules_path: str = "rules.json"):
         self.rules_path = rules_path
         index_data = get_or_load_rag_index(rules_path)
+        self.validator: RuleValidator = index_data["validator"]
         self.rules_dict: dict[str, dict[str, Any]] = index_data["rules_dict"]
         self.points_list: list[dict[str, Any]] = index_data["points_list"]
         self.vectorizer: TfidfVectorizer | None = index_data["vectorizer"]
@@ -161,6 +208,9 @@ class RAGEngine:
 
     def get_valid_rules_dict(self) -> dict[str, dict[str, Any]]:
         return self.rules_dict
+
+    def get_valid_rules(self) -> set[str]:
+        return self.validator.get_valid_rules()
 
     @functools.lru_cache(maxsize=2048)
     def _cached_search_refs(

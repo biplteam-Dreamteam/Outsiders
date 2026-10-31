@@ -220,43 +220,67 @@ def check_guardrails(
     return needs_human, sorted(list(set(reasons)))
 
 
-def sanitize_draft(
-    draft_text: str, cited: list[str], valid_rules_dict: dict[str, Any]
-) -> tuple[str, list[str]]:
-    """
-    Пост-фильтр черновика ответа:
-    1. Исключает ложные обещания разбана / возврата средств.
-    2. Валидирует все пункты правил: если пункта нет в rules.json, удаляет из cited и текста.
-    """
-    if not draft_text:
-        return "", []
+SAFE_FALLBACK_TEXT = (
+    "Здравствуйте. Ваше обращение передано профильным специалистам для проверки."
+)
+RULE_NUMBER_PATTERN = re.compile(r"\b(\d+\.\d+(?:\.\d+)?)\b")
 
-    sanitized_text = draft_text
+
+def sanitize_draft(
+    draft_reply: dict[str, Any] | str,
+    valid_rules: set[str] | dict[str, Any] | list[str],
+    legacy_rules: dict[str, Any] | set[str] | None = None,
+) -> dict[str, Any] | tuple[str, list[str]]:
+    r"""
+    УРОВЕНЬ 3: Параноидальный Пост-Чекер (Paranoid Post-Checker)
+    Логика:
+    1. Исключает запрещенные обещания разбана / возврата средств.
+    2. Проверяет draft_reply["cited"]: если элемента НЕТ в valid_rules, удаляет его из cited.
+    3. Регулярным выражением r'\b\d+\.\d+(?:\.\d+)?\b' ищет в тексте draft_reply["text"] все упоминания чисел.
+       Если найдено число, похожее на пункт правил, но его НЕТ в valid_rules, заменяет весь текст ответа
+       на безопасную заглушку:
+       "Здравствуйте. Ваше обращение передано профильным специалистам для проверки."
+       и очищает cited от выдуманного.
+    """
+    # Legacy compatibility check: sanitize_draft(draft_text: str, cited: list, valid_rules_dict)
+    if isinstance(draft_reply, str):
+        text_input = draft_reply
+        cited_input = valid_rules if isinstance(valid_rules, list) else []
+        rules_container = legacy_rules if legacy_rules is not None else set()
+        mock_reply = {"lang": "ru", "text": text_input, "cited": cited_input}
+        res = sanitize_draft(mock_reply, rules_container)
+        return res["text"], res["cited"]
+
+    if not isinstance(draft_reply, dict):
+        return draft_reply
+
+    rules_set: set[str] = (
+        set(valid_rules.keys()) if isinstance(valid_rules, dict) else set(valid_rules)
+    )
+
+    lang = draft_reply.get("lang", "ru")
+    text = draft_reply.get("text", "") or ""
+    cited = list(draft_reply.get("cited", []))
 
     # 1. Neutralize forbidden promises
     for pattern, replacement in FORBIDDEN_PROMISES:
-        sanitized_text = pattern.sub(replacement, sanitized_text)
+        text = pattern.sub(replacement, text)
 
-    # 2. Filter cited rule references
-    clean_cited: list[str] = []
-    for ref in cited:
-        ref_clean = str(ref).strip()
-        if ref_clean in valid_rules_dict:
-            clean_cited.append(ref_clean)
+    # 2. Filter cited: keep only elements present in valid_rules
+    clean_cited = [str(r).strip() for r in cited if str(r).strip() in rules_set]
 
-    # 3. Search and clean any cited rule numbers in text that are not in valid_rules_dict
-    rule_number_pattern = re.compile(r"\b(\d+\.\d+(?:\.\d+)?)\b")
+    # 3. Paranoid scan for rule-like numbers in text
+    found_numbers = RULE_NUMBER_PATTERN.findall(text)
+    has_hallucination = any(num not in rules_set for num in found_numbers)
 
-    def ref_sub_check(match):
-        num = match.group(1)
-        if num in valid_rules_dict:
-            return num
-        # If hallucinated rule number, replace with general reference
-        return "правил проекта"
+    if has_hallucination:
+        text = SAFE_FALLBACK_TEXT
+        clean_cited = []
+    else:
+        text = re.sub(r"\s{2,}", " ", text).strip()
 
-    sanitized_text = rule_number_pattern.sub(ref_sub_check, sanitized_text)
-
-    # Also clean duplicated spaces
-    sanitized_text = re.sub(r"\s{2,}", " ", sanitized_text).strip()
-
-    return sanitized_text, clean_cited
+    return {
+        "lang": lang,
+        "text": text,
+        "cited": clean_cited,
+    }
