@@ -1,6 +1,12 @@
 import re
 from typing import Any
 
+try:
+    import core_engine
+    HAS_CPP_CORE = True
+except ImportError:
+    HAS_CPP_CORE = False
+
 CP1251_KZ_MAPPING = {
     "ќ": "қ",
     "Ќ": "Қ",
@@ -170,9 +176,11 @@ GZ_PATTERN = re.compile(r"\b(?:gz|гз|зз)\b", re.IGNORECASE)
 
 
 def normalize_cp1251_kz(text: str) -> str:
-    """Заменяет искаженные символы кодировки cp1251 на правильные казахские буквы через str.translate()."""
+    """Заменяет искаженные символы кодировки cp1251 на правильные казахские буквы через C++ core или str.translate()."""
     if not text:
         return ""
+    if HAS_CPP_CORE:
+        return core_engine.fix_cp1251_kz(text)
     text_norm = text.translate(CP1251_KZ_TRANSLATE_TABLE)
     text_norm = WHITESPACE_NEWLINES_RE.sub(" ", text_norm)
     return WHITESPACE_MULTI_RE.sub(" ", text_norm).strip()
@@ -267,6 +275,19 @@ def extract_facts(
         if images_count is not None
         else (ticket.get("images_count", 0) or ticket.get("attachments", 0) or 0)
     )
+
+    if HAS_CPP_CORE:
+        rep_nick = str(ticket.get("reported_nick") or "")
+        srv_str = str(ticket.get("region") or ticket.get("server_lang") or "")
+        cpp_res = core_engine.extract_facts_cpp(
+            text, str(raw_refs), int(img_cnt), rep_nick, srv_str
+        )
+        return {
+            "nickname": cpp_res.get("nickname"),
+            "rule_refs": cpp_res.get("rule_refs", []),
+            "has_evidence": bool(cpp_res.get("has_evidence", False)),
+            "server": cpp_res.get("server"),
+        }
 
     # 1. Nickname
     nick = ticket.get("reported_nick")

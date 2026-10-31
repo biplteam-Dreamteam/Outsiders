@@ -55,6 +55,9 @@ stress:
 profile:
 	python src/run_profiler.py
 
+benchmark:
+	python src/benchmark_2k.py 2000
+
 load-test:
 	python src/load_test.py --count 50000 --concurrency 50
 

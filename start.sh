@@ -30,11 +30,11 @@ echo ""
 echo "⏳ Ожидание 5 секунд инициализации сервиса Ollama..."
 sleep 5
 
-echo "📥 Загрузка локальной LLM Qwen 2.5 3B в контейнер Ollama..."
+echo "📥 Загрузка оптимизированной 4-битной LLM Qwen 2.5 3B (q4_K_M) в контейнер Ollama..."
 if [ -t 0 ]; then
-    docker exec -it grand-copilot-ollama ollama run qwen2.5:3b || docker exec grand-copilot-ollama ollama pull qwen2.5:3b || true
+    docker exec -it grand-copilot-ollama ollama run qwen2.5:3b-instruct-q4_K_M || docker exec -it grand-copilot-ollama ollama run qwen2.5:3b || true
 else
-    docker exec grand-copilot-ollama ollama run qwen2.5:3b </dev/null || docker exec grand-copilot-ollama ollama pull qwen2.5:3b || true
+    docker exec grand-copilot-ollama ollama run qwen2.5:3b-instruct-q4_K_M </dev/null || docker exec grand-copilot-ollama ollama pull qwen2.5:3b-instruct-q4_K_M || true
 fi
 
 # 4. Вывод красивых ссылок на запущенные сервисы

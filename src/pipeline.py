@@ -194,3 +194,13 @@ class SupportCopilotPipeline:
             "confidence": confidence,
             "reasons": sorted(list(set(reasons))),
         }
+
+
+_DEFAULT_PIPELINE: SupportCopilotPipeline | None = None
+
+
+def get_default_pipeline(rules_path: str = "rules.json") -> SupportCopilotPipeline:
+    global _DEFAULT_PIPELINE
+    if _DEFAULT_PIPELINE is None:
+        _DEFAULT_PIPELINE = SupportCopilotPipeline(rules_path=rules_path)
+    return _DEFAULT_PIPELINE

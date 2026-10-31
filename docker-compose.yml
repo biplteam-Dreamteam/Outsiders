@@ -27,7 +27,7 @@ services:
       - "8501:8501"
     environment:
       - LLM_BASE_URL=http://llm_engine:11434/v1
-      - LLM_MODEL=qwen2.5:3b-instruct
+      - LLM_MODEL=qwen2.5:3b-instruct-q4_K_M
       - LLM_TIMEOUT=3.0
     volumes:
       - ./models:/app/models

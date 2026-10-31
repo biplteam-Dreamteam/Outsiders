@@ -3,6 +3,12 @@ import os
 import re
 from typing import Any
 
+try:
+    import core_engine
+    HAS_CPP_CORE = True
+except ImportError:
+    HAS_CPP_CORE = False
+
 import orjson
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -315,6 +321,17 @@ class RAGEngine:
                     ref = pt["ref"]
                     if ref not in results and ref in self.rules_dict:
                         results[ref] = True
+
+        # 6. High-speed C++ Levenshtein Fuzzy Search (core_engine)
+        if HAS_CPP_CORE and len(results) < top_k and query_lower.strip():
+            rule_texts = [p["search_doc"] for p in self.points_list]
+            rule_refs = [p["ref"] for p in self.points_list]
+            cpp_matched = core_engine.fuzzy_match_rule(query_lower, rule_texts, rule_refs, 0.65)
+            for ref in cpp_matched:
+                if len(results) >= top_k:
+                    break
+                if ref not in results and ref in self.rules_dict:
+                    results[ref] = True
 
         return tuple(results.keys())[:top_k]
 

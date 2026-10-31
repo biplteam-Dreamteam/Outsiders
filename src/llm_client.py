@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434/v1")
-LLM_MODEL = os.getenv("LLM_MODEL", "qwen2.5:3b-instruct")
+LLM_MODEL = os.getenv("LLM_MODEL", "qwen2.5:3b-instruct-q4_K_M")
 TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT", "2.5"))
 CIRCUIT_BREAKER_TTL = 10.0  # seconds to skip HTTP if server is down
 
@@ -240,7 +240,7 @@ class LLMClient:
                         ),
                     },
                 ],
-                "max_tokens": 80,
+                "max_tokens": 60,
                 "temperature": 0.2,
             }
             self._is_probing = True

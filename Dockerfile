@@ -21,11 +21,14 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application source code and configuration
-COPY rules.json taxonomy.json ./
+COPY rules.json taxonomy.json setup.py ./
 COPY src/ ./src/
 COPY models/ ./models/
 COPY app.py main.py admin_ui.py predict.py ./
 COPY entrypoint.sh ./
+
+# Build high-performance C++ core extension
+RUN python setup.py build_ext --inplace
 
 RUN chmod +x entrypoint.sh
 
