@@ -5,6 +5,7 @@
 *.pkl
 *.csv
 data/*.csv
+*.png
 pred*.jsonl
 data/rlhf.jsonl
 data/admin_feedback_rlhf.jsonl
