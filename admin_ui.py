@@ -138,6 +138,21 @@ st.sidebar.header("🔍 Фильтры очереди")
 filter_prio = st.sidebar.multiselect(
     "Приоритет", ["p0", "p1", "p2", "p3"], default=["p0", "p1", "p2", "p3"]
 )
+
+# Бонус №2: Рекомендованные шаблоны по кластерам
+templates_file = os.path.join("data", "suggested_templates.json")
+if os.path.exists(templates_file):
+    with st.sidebar.expander("💡 Шаблоны по кластерам (Бонус №2)", expanded=False):
+        try:
+            with open(templates_file, "r", encoding="utf-8") as tf:
+                t_data = json.load(tf)
+            st.caption(f"Проанализировано {t_data.get('total_reports_analyzed', 0)} обращений ({t_data.get('num_clusters', 20)} кластеров)")
+            for cl in t_data.get("clusters", [])[:6]:
+                st.markdown(f"**{cl['topic']}** ({cl['cluster_size']} тикетов, {cl['percentage']}%)")
+                st.caption(f"Ключевые слова: {', '.join(cl['top_keywords'])}")
+                st.code(cl["suggested_template"], language="text")
+        except Exception as e:
+            st.caption(f"Ошибка загрузки шаблонов: {e}")
 filter_human = st.sidebar.selectbox(
     "Требует человека (needs_human)", ["Все", "Да (Human only)", "Нет (Auto-reply)"]
 )

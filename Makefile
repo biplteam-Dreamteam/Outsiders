@@ -21,7 +21,7 @@ help:
 	@echo "  make format                                : Format code with ruff"
 
 predict:
-	python predict.py --in $(IN) --out $(OUT)
+	python src/predict.py --in $(IN) --out $(OUT)
 
 run:
 	python -m uvicorn main:app --host 0.0.0.0 --port 8000
