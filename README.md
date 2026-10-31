@@ -146,7 +146,7 @@ docker compose down
 
 Панель администратора (`admin_ui.py`) разработана специально для операторов поддержки Grand Mobile и полностью закрывает **Бонус №3**:
 
-![Grand Mobile Admin Dashboard](file:///C:/Users/Adilet/.gemini/antigravity/brain/f8c63d3b-3fd9-4a69-ad8a-c921cb63b40c/admin_ui_screenshot.png)
+![Grand Mobile Admin Dashboard](admin_ui_screenshot.png)
 
 ### Ключевые возможности интерфейса:
 1. **Живая очередь с бейджами приоритетов:**
@@ -171,7 +171,7 @@ docker compose down
 
 ## 🎮 ТЕСТИРОВАНИЕ НА РЕАЛЬНОМ СЛЕНГЕ ИГРОКОВ GRAND MOBILE
 
-Скрипт [`test_diverse_player_slang.py`](file:///c:/Users/Adilet/Desktop/decentra/test_diverse_player_slang.py) подтверждает безошибочный разбор реальной речи игроков:
+Скрипт `test_diverse_player_slang.py` подтверждает безошибочный разбор реальной речи игроков:
 
 | № | Игровой сценарий и текст обращения | Категория | Приоритет | Human? | Пункты правил | Сгенерированный черновик |
 |:---|:---|:---:|:---:|:---:|:---:|:---|
