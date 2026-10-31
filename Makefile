@@ -1,27 +1,31 @@
 IN ?= tickets_valid.jsonl
 OUT ?= pred.jsonl
 
-.PHONY: all prepare train predict run ui cluster docker-build docker-up docker-down test calibrate lint format help
+.PHONY: all prepare train predict run ui cluster docker-build docker-up docker-down test torture verify calibrate lint format help
 
 all: predict
 
 help:
 	@echo "Grand Mobile Support Copilot — Command List:"
 	@echo "  make predict IN=<in.jsonl> OUT=<out.jsonl> : Run batch inference"
+	@echo "  make verify OUT=<out.jsonl>                : Verify 100% compliance on predictions"
+	@echo "  make torture                               : Run organizer 20-case torture test suite"
 	@echo "  make run                                   : Start FastAPI server (port 8000)"
 	@echo "  make ui                                    : Start Streamlit Admin UI (port 8501)"
-	@echo "  make prepare                               : Run pseudo-labeling on train dataset"
-	@echo "  make train                                 : Train CatBoost classifier on train dataset"
 	@echo "  make cluster                               : Run template clustering (Bonus 2)"
-	@echo "  make test                                  : Run test suite"
-	@echo "  make calibrate                             : Run 50-ticket strict calibration"
+	@echo "  make test                                  : Run unit and contract test suite"
 	@echo "  make docker-build                          : Build Docker images"
 	@echo "  make docker-up                             : Start services in Docker containers"
 	@echo "  make docker-down                           : Stop Docker containers"
-	@echo "  make format                                : Format code with ruff"
 
 predict:
 	python src/predict.py --in $(IN) --out $(OUT)
+
+verify:
+	python verify_strict_compliance.py $(OUT)
+
+torture:
+	python test_organizer_torture.py
 
 run:
 	python -m uvicorn main:app --host 0.0.0.0 --port 8000
