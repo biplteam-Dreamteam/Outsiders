@@ -1,7 +1,7 @@
 IN ?= tickets_valid.jsonl
 OUT ?= pred.jsonl
 
-.PHONY: all train predict run ui cluster docker-build docker-up docker-down test calibrate lint format help
+.PHONY: all prepare train predict run ui cluster docker-build docker-up docker-down test calibrate lint format help
 
 all: predict
 
@@ -10,6 +10,7 @@ help:
 	@echo "  make predict IN=<in.jsonl> OUT=<out.jsonl> : Run batch inference"
 	@echo "  make run                                   : Start FastAPI server (port 8000)"
 	@echo "  make ui                                    : Start Streamlit Admin UI (port 8501)"
+	@echo "  make prepare                               : Run pseudo-labeling on train dataset"
 	@echo "  make train                                 : Train CatBoost classifier on train dataset"
 	@echo "  make cluster                               : Run template clustering (Bonus 2)"
 	@echo "  make test                                  : Run test suite"
@@ -28,6 +29,9 @@ run:
 ui:
 	python -m streamlit run admin_ui.py --server.port 8501 --server.address 0.0.0.0
 
+prepare:
+	python src/prepare_dataset.py
+
 train:
 	python src/train_classifier.py
 
@@ -40,6 +44,7 @@ calibrate:
 test:
 	python tests/test_contract.py
 	python tests/test_api.py
+	python tests/test_predict_classes.py
 	python calibrate_pipeline.py
 
 docker-build:
