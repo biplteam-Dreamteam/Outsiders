@@ -140,3 +140,4 @@ async def test_kazakh_replies():
 
 if __name__ == "__main__":
     asyncio.run(test_kazakh_replies())
+

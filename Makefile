@@ -45,7 +45,12 @@ test:
 	python tests/test_contract.py
 	python tests/test_api.py
 	python tests/test_predict_classes.py
+	python tests/test_kazakh_reply.py
+	python src/final_tests.py
 	python calibrate_pipeline.py
+
+stress:
+	python src/final_tests.py
 
 docker-build:
 	docker compose build

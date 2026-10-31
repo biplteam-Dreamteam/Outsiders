@@ -80,13 +80,26 @@ class SupportCopilotPipeline:
         )
 
         # 8. Draft reply generation (LLM with instant Fallback)
-        draft_raw = await self.llm.generate_draft(
-            lang=lang,
-            ticket=ticket,
-            category=category,
-            retrieved_rules=rules,
-            nickname=extracted["nickname"],
+        # Security Guardrail: For payment/donate queries, bypass LLM to prevent financial hallucinations
+        is_payment_query = category == "report.payment" or any(
+            k in clean_text.lower() for k in ("донат", "donate", "вип", "випка", "vip", "төлем", "to'lov")
         )
+        if is_payment_query:
+            draft_raw = self.llm.generate_fallback(
+                lang=lang,
+                ticket=ticket,
+                category=category,
+                retrieved_rules=[],
+                nickname=extracted["nickname"],
+            )
+        else:
+            draft_raw = await self.llm.generate_draft(
+                lang=lang,
+                ticket=ticket,
+                category=category,
+                retrieved_rules=rules,
+                nickname=extracted["nickname"],
+            )
 
         # 9. Sanitize draft (Anti-hallucination filter)
         clean_draft_text, clean_cited = sanitize_draft(

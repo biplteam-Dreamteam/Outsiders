@@ -17,6 +17,7 @@ FALLBACK_TEMPLATES = {
         "general": "Здравствуйте, {nick}! Благодарим за обращение в поддержку Grand Mobile. По вашей ситуации проводится проверка.",
         "appeal": "Приветствуем, {nick}. Вопросы обжалования наказаний рассматриваются администрацией через официальный раздел апелляций.",
         "report": "Приветствуем! Если вам требуется помощь по командам или навигации, используйте /help и /gps в игре.",
+        "payment": "Приветствуем, {nick}! Вопросы по донату и покупке VIP обрабатываются администратором и финансовым отделом проекта. Актуальные цены и предложения доступны в официальном магазине.",
     },
     "kk": {
         "with_rule": "Сәлеметсіз бе, {nick}. Сіздің өтінішіңіз қабылданды. Жоба ережелерінің {ref} тармағы бойынша тексеру жүргізілуде. Сервер әкімшілігі тиісті шаралар қабылдайды.",
@@ -24,6 +25,7 @@ FALLBACK_TEMPLATES = {
         "general": "Сәлеметсіз бе, {nick}! Grand Mobile қолдау қызметіне хабарласқаныңыз үшін рахмет. Жағдайыңыз бойынша тексеру жүргізілуде.",
         "appeal": "Сәлеметсіз бе, {nick}. Жазаға шағымдану мәселелері ресми апелляция бөлімі арқылы қарастырылады.",
         "report": "Сәлеметсіз бе! Командалар мен бағдар бойынша көмек қажет болса, ойында /help және /gps пайдаланыңыз.",
+        "payment": "Сәлеметсіз бе, {nick}! Донат және VIP сатып алу мәселелері әкімшілік және қаржы бөлімі арқылы қарастырылады. Ресми дүкеннен ақпарат ала аласыз.",
     },
     "uz": {
         "with_rule": "Assalomu alaykum, {nick}. Murojaatingiz qabul qilindi. Loyiha qoidalarining {ref}-bandi bo'yicha tekshiruv olib borilmoqda. Ma'muriyat tegishli choralarni ko'radi.",
@@ -31,6 +33,7 @@ FALLBACK_TEMPLATES = {
         "general": "Assalomu alaykum, {nick}! Grand Mobile qo'llab-quvvatlash xizmati. Murojaatingiz bo'yicha tekshiruv olib borilmoqda.",
         "appeal": "Assalomu alaykum, {nick}. Jazoni bekor qilish masalalari ma'muriyatning rasmiy apellyatsiya bo'limida ko'rib chiqiladi.",
         "report": "Assalomu alaykum! Agar yordam kerak bo'lsa, o'yinda /help va /gps buyruqlaridan foydalanishingiz mumkin.",
+        "payment": "Assalomu alaykum, {nick}! Donat va VIP sotib olish masalalari ma'muriyat va moliya bo'limi tomonidan ko'rib chiqiladi. Rasmiy do'kondan ma'lumot olishingiz mumkin.",
     },
     "en": {
         "with_rule": "Greetings, {nick}. Your request has been received. We are reviewing the case under server rule {ref}. Server administration will take appropriate action.",
@@ -38,6 +41,7 @@ FALLBACK_TEMPLATES = {
         "general": "Hello, {nick}! Thank you for contacting Grand Mobile support. We are looking into your situation.",
         "appeal": "Greetings, {nick}. Penalty appeals must be submitted to the official appeal section.",
         "report": "Hello! For help with commands and navigation, please use /help and /gps in-game.",
+        "payment": "Greetings, {nick}! Inquiries regarding donations and VIP status are handled by administration and billing. Please check the official store for current prices.",
     },
 }
 
@@ -98,8 +102,16 @@ class LLMClient:
         cited: list[str] = []
         text = ""
 
+        # Case 0: Payment & Donate queries (official store / billing info without hallucination)
+        ticket_str = str(ticket).lower()
+        if category == "report.payment" or any(
+            k in ticket_str
+            for k in ("донат", "donate", "вип", "випка", "vip", "төлем", "to'lov")
+        ):
+            text = tmpl["payment"].format(nick=nick)
+
         # Case 1: Rules were retrieved
-        if retrieved_rules:
+        elif retrieved_rules:
             top_rule = retrieved_rules[0]
             ref = str(top_rule.get("ref", "")).strip()
             rule_text = top_rule.get("text", "").strip()
