@@ -97,6 +97,32 @@ HACK_KEYWORDS = {
     "password changed",
 }
 
+ADMIN_COMPLAINT_KEYWORDS = {
+    # ru
+    "администратор",
+    "администраци",
+    "админ",
+    "жалоба на админ",
+    "действия администра",
+    "мут без причины",
+    "бан без причины",
+    "деморган без причины",
+    "посадил в деморган",
+    "выдал мут",
+    "выдал бан",
+    "варн от админа",
+    # kk
+    "әкімші",
+    "акимши",
+    "әкімшілік",
+    # uz
+    "administrator",
+    "ma'muriyat",
+    # en
+    "administrator",
+    "admin",
+}
+
 PUNISHMENT_DECISION_KEYWORDS = {
     # ru
     "выдать бан",
@@ -104,8 +130,13 @@ PUNISHMENT_DECISION_KEYWORDS = {
     "забаньте его",
     "верните имущество",
     "верните деньги",
-    "требую наказать",
+    "верните",
+    "возврат",
+    "возместите",
+    "возместить",
     "компенсацию",
+    "компенсировать",
+    "требую наказать",
     "забанить",
     "деморган ему",
     "мут ему",
@@ -114,16 +145,25 @@ PUNISHMENT_DECISION_KEYWORDS = {
     "бандаңыз",
     "мүлікті қайтар",
     "ақшамды қайтар",
+    "қайтар",
+    "қайтарыңыз",
+    "өтемақы",
     # uz
     "jazolang",
     "ban bering",
     "pulimni qaytar",
     "mulkni qaytar",
+    "qaytar",
+    "qaytaring",
+    "kompensatsiya",
     # en
     "ban him",
     "punish player",
     "return money",
     "return property",
+    "refund",
+    "return",
+    "compensate",
 }
 
 FORBIDDEN_PROMISES = [
@@ -205,6 +245,13 @@ def check_guardrails(
         reasons.append(
             f"Категория '{category}' требует обязательного ручного разбора администратором"
         )
+
+    if any(k in text_lower for k in ADMIN_COMPLAINT_KEYWORDS) and (
+        ticket.get("kind") == "complaint"
+        or any(w in text_lower for w in ["жалоб", "админ", "әкімші", "мут", "бан", "деморган", "варн", "наказан"])
+    ):
+        needs_human = True
+        reasons.append("Жалоба на действия администрации: требует обязательного ручного разбора")
 
     if any(k in text_lower for k in PAYMENT_KEYWORDS):
         needs_human = True

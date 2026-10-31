@@ -22,6 +22,10 @@ def label_ticket(item: dict[str, Any], text: str) -> tuple[str, str]:
             or "не согласен с наказанием" in text_lower
             or "жалоба на админ" in text_lower
             or "мут без причины" in text_lower
+            or "администратор" in text_lower
+            or "админ" in text_lower
+            or "әкімші" in text_lower
+            or "administrator" in text_lower
         ):
             cat = "complaint.admin"
         elif (

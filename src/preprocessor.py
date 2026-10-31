@@ -260,21 +260,22 @@ def extract_facts(
     """
     if text is None:
         # Collect text from player messages
+        raw_msgs = ticket.get("messages") or []
         player_msgs = [
             m.get("text", "")
-            for m in ticket.get("messages", [])
-            if m.get("role") == "player"
+            for m in (raw_msgs if isinstance(raw_msgs, list) else [])
+            if isinstance(m, dict) and m.get("role") == "player"
         ]
         text = " ".join(player_msgs)
 
     text_norm = normalize_cp1251_kz(text)
     raw_refs = rule_refs_raw or ticket.get("rule_refs_raw", "") or ""
     raw_refs_norm = normalize_cp1251_kz(str(raw_refs))
-    img_cnt = (
-        images_count
-        if images_count is not None
-        else (ticket.get("images_count", 0) or ticket.get("attachments", 0) or 0)
-    )
+    try:
+        raw_val = images_count if images_count is not None else (ticket.get("images_count") or ticket.get("attachments") or 0)
+        img_cnt = max(0, int(raw_val))
+    except Exception:
+        img_cnt = 0
 
     if HAS_CPP_CORE:
         rep_nick = str(ticket.get("reported_nick") or "")

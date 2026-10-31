@@ -32,11 +32,17 @@ class SupportCopilotPipeline:
 
     async def triage_ticket_async(self, ticket: dict[str, Any]) -> dict[str, Any]:
         """Асинхронная обработка одного тикета (с попыткой LLM)"""
-        # 1. Text & Preprocessing
+        if not isinstance(ticket, dict):
+            ticket = {}
+
+        # 1. Text & Preprocessing (Safe against null and bad types)
+        raw_msgs = ticket.get("messages") or []
+        if not isinstance(raw_msgs, list):
+            raw_msgs = []
         player_msgs = [
             m.get("text", "")
-            for m in ticket.get("messages", [])
-            if m.get("role") == "player"
+            for m in raw_msgs
+            if isinstance(m, dict) and m.get("role") == "player"
         ]
         raw_text = " ".join(player_msgs)
         clean_text = normalize_cp1251_kz(raw_text)
@@ -143,11 +149,17 @@ class SupportCopilotPipeline:
 
     def triage_ticket_sync(self, ticket: dict[str, Any]) -> dict[str, Any]:
         """Синхронная ультра-быстрая обработка (для пакетного инференса < 5 мс)"""
-        # 1. Text & Preprocessing
+        if not isinstance(ticket, dict):
+            ticket = {}
+
+        # 1. Text & Preprocessing (Safe against null and bad types)
+        raw_msgs = ticket.get("messages") or []
+        if not isinstance(raw_msgs, list):
+            raw_msgs = []
         player_msgs = [
             m.get("text", "")
-            for m in ticket.get("messages", [])
-            if m.get("role") == "player"
+            for m in raw_msgs
+            if isinstance(m, dict) and m.get("role") == "player"
         ]
         raw_text = " ".join(player_msgs)
         clean_text = normalize_cp1251_kz(raw_text)

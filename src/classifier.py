@@ -96,6 +96,22 @@ INSULT_WORDS = (
     "межнац",
     "транс",
 )
+ADMIN_WORDS = (
+    "администратор",
+    "администраци",
+    "админ",
+    "әкімші",
+    "акимши",
+    "administrator",
+    "admin",
+    "мут без причины",
+    "бан без причины",
+    "деморган без причины",
+    "посадил в деморган",
+    "выдал мут",
+    "выдал бан",
+    "варн от админа",
+)
 CHEAT_WORDS = (
     "чит",
     "читы",
@@ -252,7 +268,10 @@ class TicketClassifier:
             category = TAXONOMY_RULE_ANCHORS[clean_refs[0]]
             confidence = 0.95
         elif kind == "complaint":
-            if any(w in text_lower for w in INSULT_WORDS):
+            if any(w in text_lower for w in ADMIN_WORDS):
+                category = "complaint.admin"
+                confidence = 0.95
+            elif any(w in text_lower for w in INSULT_WORDS):
                 category = "complaint.insult"
                 confidence = 0.95
             elif any(w in text_lower for w in CHEAT_WORDS):
@@ -364,10 +383,14 @@ class TicketClassifier:
         """
         Предсказывает категорию, приоритет и confidence для полного объекта тикета.
         """
-        kind = ticket.get("kind", "complaint")
+        kind = str(ticket.get("kind") or "complaint")
         raw_refs = str(ticket.get("rule_refs_raw", "") or "")
         combined_text = f"{raw_refs} {text}".strip()
-        img_cnt = int(ticket.get("images_count", 0) or 0)
+        try:
+            raw_cnt = ticket.get("images_count") or ticket.get("attachments") or 0
+            img_cnt = max(0, int(raw_cnt))
+        except Exception:
+            img_cnt = 0
 
         preds = self.predict_classes(
             text=combined_text, kind=kind, images_count=img_cnt
