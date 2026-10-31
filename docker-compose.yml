@@ -16,22 +16,21 @@ services:
       retries: 5
       start_period: 5s
 
-  app:
+  # Pure C++20 High-Performance Production Backend (Crow + ONNX + Dynamic Batching)
+  cpp_backend:
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: grand-copilot-app
+      dockerfile: Dockerfile.cpp_backend
+    container_name: grand-copilot-cpp-backend
     restart: unless-stopped
     ports:
       - "8000:8000"
-      - "8501:8501"
     environment:
       - LLM_BASE_URL=http://llm_engine:11434/v1
       - LLM_MODEL=qwen2.5:3b-instruct-q4_K_M
-      - LLM_TIMEOUT=3.0
+      - LLM_TIMEOUT=1.5
     volumes:
       - ./models:/app/models
-      - ./data:/app/data
     depends_on:
       - llm_engine
     healthcheck:
@@ -40,6 +39,22 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
+
+  # Lightweight Streamlit Admin UI with RLHF
+  admin_ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: grand-copilot-admin-ui
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    command: ["python", "-m", "streamlit", "run", "admin_ui.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+    depends_on:
+      - cpp_backend
 
 volumes:
   ollama_models:

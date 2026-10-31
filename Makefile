@@ -58,6 +58,12 @@ profile:
 benchmark:
 	python src/benchmark_2k.py 2000
 
+cpp-build:
+	cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
+
+cpp-run:
+	./build/grand_mobile_server rules.json models/classifier.onnx
+
 load-test:
 	python src/load_test.py --count 50000 --concurrency 50
 

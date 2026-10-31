@@ -269,3 +269,4 @@ PYBIND11_MODULE(core_engine, m) {
     m.def("extract_facts_cpp", &extract_facts_cpp, "Fast C++ fact, nickname, server, evidence and rule extractor");
     m.def("fuzzy_match_rule", &fuzzy_match_rule, "C++ Fuzzy rule search across rules database with threshold");
 }
+
