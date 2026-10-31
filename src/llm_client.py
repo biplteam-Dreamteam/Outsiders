@@ -1,4 +1,5 @@
 import os
+import re
 import time
 from typing import Any
 
@@ -18,21 +19,21 @@ FALLBACK_TEMPLATES = {
         "report": "Приветствуем! Если вам требуется помощь по командам или навигации, используйте /help и /gps в игре.",
     },
     "kk": {
-        "with_rule": "Сәлеметсіз бе, {nick}. Сіздің өтінішіңіз қабылданды. Жоба ережелерінің {ref} тармағымен танысыңыз: «{text}». Сервер әкімшілігі тиісті шаралар қабылдайды.",
+        "with_rule": "Сәлеметсіз бе, {nick}. Сіздің өтінішіңіз қабылданды. Жоба ережелерінің {ref} тармағы бойынша тексеру жүргізілуде. Сервер әкімшілігі тиісті шаралар қабылдайды.",
         "need_evidence": "Сәлеметсіз бе, {nick}. Шағымды тексеру үшін дәлелдемелер (скриншот немесе /time бар бейнежазба) ұсыну қажет.",
         "general": "Сәлеметсіз бе, {nick}! Grand Mobile қолдау қызметіне хабарласқаныңыз үшін рахмет. Жағдайыңыз бойынша тексеру жүргізілуде.",
         "appeal": "Сәлеметсіз бе, {nick}. Жазаға шағымдану мәселелері ресми апелляция бөлімі арқылы қарастырылады.",
         "report": "Сәлеметсіз бе! Командалар мен бағдар бойынша көмек қажет болса, ойында /help және /gps пайдаланыңыз.",
     },
     "uz": {
-        "with_rule": "Assalomu alaykum, {nick}. Murojaatingiz qabul qilindi. Loyiha qoidalarining {ref}-bandi bilan tanishib chiqing: «{text}». Ma'muriyat tegishli choralarni ko'radi.",
+        "with_rule": "Assalomu alaykum, {nick}. Murojaatingiz qabul qilindi. Loyiha qoidalarining {ref}-bandi bo'yicha tekshiruv olib borilmoqda. Ma'muriyat tegishli choralarni ko'radi.",
         "need_evidence": "Assalomu alaykum, {nick}. Shikoyatni ko'rib chiqish uchun dalillar (skrinshot yoki /time bilan video) taqdim etishingiz kerak.",
         "general": "Assalomu alaykum, {nick}! Grand Mobile qo'llab-quvvatlash xizmati. Murojaatingiz bo'yicha tekshiruv olib borilmoqda.",
         "appeal": "Assalomu alaykum, {nick}. Jazoni bekor qilish masalalari ma'muriyatning rasmiy apellyatsiya bo'limida ko'rib chiqiladi.",
         "report": "Assalomu alaykum! Agar yordam kerak bo'lsa, o'yinda /help va /gps buyruqlaridan foydalanishingiz mumkin.",
     },
     "en": {
-        "with_rule": "Greetings, {nick}. Your request has been received. Please refer to rule {ref}: '{text}'. Server administration will take appropriate action.",
+        "with_rule": "Greetings, {nick}. Your request has been received. We are reviewing the case under server rule {ref}. Server administration will take appropriate action.",
         "need_evidence": "Greetings, {nick}. To investigate your complaint, please provide valid evidence (screenshots or video with /time).",
         "general": "Hello, {nick}! Thank you for contacting Grand Mobile support. We are looking into your situation.",
         "appeal": "Greetings, {nick}. Penalty appeals must be submitted to the official appeal section.",
@@ -130,6 +131,34 @@ class LLMClient:
 
         return {"lang": target_lang, "text": text, "cited": cited}
 
+    def _validate_response_lang(self, content: str, target_lang: str) -> bool:
+        """
+        Гарантирует, что модель не сбилась на русский язык,
+        если тикет был на казахском (kk) или узбекском (uz).
+        """
+        if not content:
+            return False
+        content_lower = content.lower()
+        if target_lang == "kk":
+            ru_markers = ["здравствуйте", "приветствуем", "ваше обращение", "принято к рассмотрению", "правил проекта"]
+            kk_markers = ["сәлем", "салем", "сіздің", "өтініш", "қайырлы", "ереже", "тексеру", "шаралар", "рахмет", "әкімшілік", "ә", "ғ", "қ", "ң", "ө", "ұ", "ү", "і"]
+            has_ru = any(m in content_lower for m in ru_markers)
+            has_kk = any(m in content_lower for m in kk_markers)
+            if has_ru and not has_kk:
+                return False
+            return True
+
+        if target_lang == "uz":
+            ru_markers = ["здравствуйте", "приветствуем", "ваше обращение", "принято к рассмотрению", "правил проекта"]
+            uz_markers = ["assalomu", "alaykum", "murojaat", "qabul", "qoidalar", "tekshiruv", "choralar", "rahmat", "iltimos", "kerak", "o'", "g'"]
+            has_ru = any(m in content_lower for m in ru_markers)
+            has_uz = any(m in content_lower for m in uz_markers)
+            if has_ru and not has_uz:
+                return False
+            return True
+
+        return True
+
     async def generate_draft(
         self,
         lang: str,
@@ -141,8 +170,9 @@ class LLMClient:
         """
         Генерирует черновик ответа:
         1. Проверяет Circuit Breaker (если LLM недавно отвалилась, сразу fallback)
-        2. Пробует вызвать локальную LLM через connection pool
-        3. При таймауте или ошибке мгновенно активирует fallback
+        2. Формирует жесткий мультиязычный CoT-промпт
+        3. Пробует вызвать локальную LLM через connection pool
+        4. При таймауте, ошибке или сбое языка мгновенно активирует чистый localized fallback
         """
         now = time.time()
         # Circuit Breaker: if LLM server failed in the last 10s, don't wait for timeout
@@ -155,8 +185,12 @@ class LLMClient:
         valid_refs = []
         for r in retrieved_rules:
             ref = str(r.get("ref", "")).strip()
-            valid_refs.append(ref)
-            rules_context += f"Пункт {ref}: {r.get('text', '')}\n"
+            if ref:
+                valid_refs.append(ref)
+                rules_context += f"Пункт {ref}: {r.get('text', '')}\n"
+
+        if not rules_context:
+            rules_context = "Общие правила вежливого общения и предоставления доказательств (/time, скриншот)."
 
         player_messages = [
             m.get("text", "")
@@ -166,15 +200,20 @@ class LLMClient:
         query = " ".join(player_messages)
 
         system_prompt = (
-            f"Ты — официальный ассистент поддержки Grand Mobile. "
-            f"Ответь строго на языке пользователя: {lang}. "
-            f"Будь вежлив, краток (не более 2-3 предложений). "
-            f"Опирайся ТОЛЬКО на следующие пункты правил игры: \n{rules_context}\n"
-            f"КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО выдумывать несуществующие правила или обещать разбан, возврат средств или наказание. "
-            f"Разрешенные для цитирования пункты: {valid_refs}."
+            f"Ты — официальный агент службы поддержки игры Grand Mobile.\n"
+            f"Твоя задача — ответить игроку вежливо и коротко (не более 3 предложений).\n\n"
+            f"ВНИМАНИЕ: Игрок написал на языке '{lang}'. Ты ОБЯЗАН написать ответ СТРОГО на языке '{lang}'.\n"
+            f"Если '{lang}' == 'kk', отвечай только на казахском. Если '{lang}' == 'uz', отвечай только на узбекском.\n"
+            f"Если '{lang}' == 'en', отвечай только на английском. Если '{lang}' == 'ru', отвечай на русском.\n\n"
+            f"Тебе передано правило игры на РУССКОМ языке: {rules_context.strip()}\n"
+            f"Разрешенные для цитирования пункты: {valid_refs}. Категорически запрещено выдумывать другие пункты правил.\n\n"
+            f"Внутренний алгоритм твоей работы:\n"
+            f"1. Пойми суть правила на русском.\n"
+            f"2. Сформулируй ответ.\n"
+            f"3. ПЕРЕВЕДИ ответ на язык '{lang}'.\n"
+            f"4. Выведи ТОЛЬКО финальный переведенный ответ, без своих рассуждений.\n\n"
+            f"Текст игрока: {query}"
         )
-
-        user_content = f"Игрок ({nickname or 'Игрок'}): {query}"
 
         try:
             client = self._get_client()
@@ -182,7 +221,10 @@ class LLMClient:
                 "model": self.model,
                 "messages": [
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_content},
+                    {
+                        "role": "user",
+                        "content": f"Напиши финальный ответ игроку строго на языке '{lang}':",
+                    },
                 ],
                 "max_tokens": 150,
                 "temperature": 0.2,
@@ -191,12 +233,20 @@ class LLMClient:
             if resp.status_code == 200:
                 data = resp.json()
                 content = data["choices"][0]["message"]["content"].strip()
-                cited = [ref for ref in valid_refs if ref in content]
-                return {
-                    "lang": lang if lang in FALLBACK_TEMPLATES else "ru",
-                    "text": content,
-                    "cited": cited,
-                }
+                # Clean reasoning / CoT leakages if any
+                content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+                for marker in ("4. ", "4) ", "Финальный ответ:", "Ответ:", "Жауап:", "Javob:", "Answer:"):
+                    if marker in content:
+                        content = content.split(marker)[-1].strip()
+
+                # Validate language: ensure not fallen back to Russian if target was kk/uz
+                if self._validate_response_lang(content, lang):
+                    cited = [ref for ref in valid_refs if ref in content]
+                    return {
+                        "lang": lang if lang in FALLBACK_TEMPLATES else "ru",
+                        "text": content,
+                        "cited": cited,
+                    }
         except Exception:
             # Mark failure for circuit breaker
             self.last_failure_time = time.time()

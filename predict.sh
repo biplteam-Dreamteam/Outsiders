@@ -34,3 +34,4 @@ fi
 echo ""
 echo "✅ Batch prediction finished successfully!"
 echo "📄 Results saved to: $OUT_FILE"
+

@@ -69,3 +69,4 @@ echo "=========================================================="
 echo "🎉 Build finished successfully!"
 echo "Next step: Run './run.sh' to start all services."
 echo "=========================================================="
+
