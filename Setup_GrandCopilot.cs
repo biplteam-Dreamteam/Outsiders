@@ -41,7 +41,7 @@ namespace GrandCopilotInstaller
 
         private void InitializeComponent()
         {
-            this.Text = "Мастер установки Grand Mobile Support Copilot v2.5 (Enterprise)";
+            this.Text = "Мастер установки комплекса «Via автоматизация» v2.5 (Enterprise)";
             this.Size = new Size(680, 540);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -59,7 +59,7 @@ namespace GrandCopilotInstaller
             };
             Label lblTitle = new Label
             {
-                Text = "Установка Grand Mobile Support Copilot",
+                Text = "Установка комплекса «Via автоматизация»",
                 Font = new Font("Segoe UI", 13.5f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(56, 189, 248),
                 Location = new Point(22, 14),

@@ -24,7 +24,7 @@ FEEDBACK_FILE_ALT = os.path.join("data", "admin_feedback_rlhf.jsonl")
 os.makedirs("data", exist_ok=True)
 
 st.set_page_config(
-    page_title="Grand Mobile Support Copilot — Enterprise Admin Panel",
+    page_title="Via автоматизация — Enterprise Admin Panel",
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -233,7 +233,7 @@ total_cpu_cores = os.cpu_count() or 16
 
 # Sidebar Control Center
 with st.sidebar:
-    st.markdown("### 🛡️ Grand Mobile Copilot")
+    st.markdown("### 🛡️ Via автоматизация")
     st.caption("Enterprise Control Panel v2.5")
 
     st.markdown("---")
@@ -277,12 +277,35 @@ with st.sidebar:
         st.success("Кэш моделей сброшен.")
         st.rerun()
 
-# Header Banner
+# Header Banner: Via автоматизация
 st.markdown(
     """
-    <div style="background: linear-gradient(90deg, #1e293b 0%, #0f172a 100%); padding: 16px 24px; border-radius: 10px; border-left: 6px solid #38bdf8; margin-bottom: 20px;">
-        <h2 style="color: #f8fafc; margin: 0; font-size: 24px;">🛡️ Grand Mobile Support Copilot — Enterprise Admin Panel</h2>
-        <p style="color: #94a3b8; margin: 4px 0 0 0; font-size: 14px;">Центр администрирования, настройки политик безопасности, управления базой знаний и контроля SLA</p>
+    <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); 
+                padding: 20px 28px; border-radius: 12px; border: 1px solid rgba(56, 189, 248, 0.25);
+                display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);">
+        <div>
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 4px;">
+                <span style="background: linear-gradient(135deg, #38bdf8 0%, #0284c7 100%);
+                             color: #020617; font-weight: 800; font-size: 14px; padding: 4px 10px;
+                             border-radius: 6px; letter-spacing: 0.08em; text-transform: uppercase;">
+                    VIA AI
+                </span>
+                <h1 style="color: #f8fafc; margin: 0; font-size: 22px; font-weight: 700;">
+                    Via автоматизация — Интеллектуальный Центр Оператора
+                </h1>
+            </div>
+            <p style="color: #94a3b8; margin: 0; font-size: 13.5px;">
+                Контроль очередей SLA, верификация правил RAG, управление аппаратным инференсом и RLHF
+            </p>
+        </div>
+        <div style="text-align: right; border-left: 1px solid rgba(148, 163, 184, 0.15); padding-left: 24px;">
+            <div style="display: flex; align-items: center; gap: 8px; justify-content: flex-end;">
+                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #34d399; box-shadow: 0 0 10px #34d399;"></span>
+                <span style="color: #34d399; font-size: 12px; font-weight: 600; text-transform: uppercase;">Шлюз Активен</span>
+            </div>
+            <span style="color: #64748b; font-size: 12px; font-family: monospace;">v2.5.0 Enterprise On-Premise</span>
+        </div>
     </div>
     """,
     unsafe_allow_html=True,

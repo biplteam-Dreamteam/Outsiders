@@ -48,7 +48,7 @@ namespace GrandCopilot
 
         private void InitializeComponent()
         {
-            this.Text = "Grand Mobile Support Copilot — Enterprise Control Center v2.5";
+            this.Text = "Via автоматизация — Enterprise AI Control Center v2.5";
             this.Size = new Size(1000, 720);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.BackColor = Color.FromArgb(15, 23, 42); // slate-900
@@ -64,7 +64,7 @@ namespace GrandCopilot
             };
             Label lblTitle = new Label
             {
-                Text = "GRAND MOBILE SUPPORT COPILOT",
+                Text = "VIA АВТОМАТИЗАЦИЯ | ENTERPRISE AI CONTROL",
                 Font = new Font("Segoe UI", 14f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(56, 189, 248), // sky-400
                 Location = new Point(20, 12),
@@ -72,7 +72,7 @@ namespace GrandCopilot
             };
             Label lblSub = new Label
             {
-                Text = "Enterprise AI Triage & Copilot Engine — Полное управление режимами и аппаратными ресурсами (CPU/RAM)",
+                Text = "Интеллектуальная система поддержки первого эшелона Grand Mobile (100% On-Premise, $0.00 токенов)",
                 Font = new Font("Segoe UI", 9.5f, FontStyle.Regular),
                 ForeColor = Color.FromArgb(148, 163, 184), // slate-400
                 Location = new Point(22, 40),
