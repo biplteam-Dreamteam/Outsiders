@@ -1,193 +1,32 @@
+import json
+import logging
 import os
 import re
 from typing import Any
 
-import joblib
-import numpy as np
-from scipy import sparse
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 from src.preprocessor import normalize_cp1251_kz
-from src.rules_mapper import label_ticket
+from src.rule_manager import get_active_rules_path, parse_rules_content
+
+logger = logging.getLogger("via-classifier")
 
 MODEL_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models"
 )
 CAT_MODEL_PATH = os.path.join(MODEL_DIR, "category_model.cbm")
 PRIO_MODEL_PATH = os.path.join(MODEL_DIR, "priority_model.cbm")
-CBM_MODEL_PATH = os.path.join(MODEL_DIR, "classifier.cbm")
-META_PATH = os.path.join(MODEL_DIR, "classifier_meta.joblib")
-JOBLIB_MODEL_PATH = os.path.join(MODEL_DIR, "classifier.joblib")
-
-TAXONOMY_RULE_ANCHORS = {
-    "2.1": "complaint.insult",
-    "2.2": "complaint.insult",
-    "2.4": "complaint.insult",
-    "2.6": "complaint.insult",
-    "5.2": "complaint.cheat",
-    "5.3": "complaint.dm",
-    "5.4": "complaint.dm",
-    "4.1": "complaint.scam",
-    "4.2": "complaint.scam",
-    "2.3": "complaint.rmt_ads",
-    "4.4": "complaint.rmt_ads",
-    "3.4": "complaint.admin",
-}
-
-PAYMENT_WORDS = (
-    "донат",
-    "donate",
-    "оплат",
-    "платеж",
-    "платёж",
-    "гк",
-    "to'lov",
-    "төлем",
-    "сатып алу",
-    "pul tushmadi",
-    "чек",
-    "пополнил",
-)
-ACCOUNT_WORDS = (
-    "взлом",
-    "украли акк",
-    "пароль сменили",
-    "потерял доступ",
-    "akkaunt",
-    "hacked",
-    "украли",
-    "восстанов",
-)
-HELP_WORDS = (
-    "застрял",
-    "вытащ",
-    "переверн",
-    "помогите выбраться",
-    "текстур",
-    "qotib",
-    "slap",
-    "спавн",
-    "баг",
-    "tushib",
-)
-INSULT_WORDS = (
-    "оск",
-    "оскорб",
-    "упом",
-    "родных",
-    "родни",
-    "мать",
-    "родител",
-    "неадекват",
-    "неадыкват",
-    "мат",
-    "матер",
-    "обзыва",
-    "haromi",
-    "harom",
-    "боқтау",
-    "боқтық",
-    "балағат",
-    "в чате все видно",
-    "оскр",
-    "osk",
-    "расизм",
-    "национальн",
-    "розжиг",
-    "межнац",
-    "транс",
-)
-ADMIN_WORDS = (
-    "администратор",
-    "администраци",
-    "админ",
-    "әкімші",
-    "акимши",
-    "administrator",
-    "admin",
-    "мут без причины",
-    "бан без причины",
-    "деморган без причины",
-    "посадил в деморган",
-    "выдал мут",
-    "выдал бан",
-    "варн от админа",
-)
-CHEAT_WORDS = (
-    "чит",
-    "читы",
-    "софт",
-    "аим",
-    "вх",
-    "рванка",
-    "бот",
-    "кликер",
-    "спидхак",
-    "cheat",
-    "aimbot",
-)
-SCAM_WORDS = (
-    "скам",
-    "обман",
-    "развод",
-    "махинаци",
-    "кинул на деньги",
-    "перевел деньги",
-    "вымогает",
-)
-DM_WORDS = (
-    "дм",
-    "дб",
-    "ск",
-    "тк",
-    "dm",
-    "db",
-    "sk",
-    "tk",
-    "убил",
-    "урон",
-    "расстрел",
-    "deathmatch",
-    "driveby",
-    "уход от рп",
-    "урп",
-    "нонрп",
-    "nonrp",
-    "веревка в зз",
-    "связал в зз",
-)
-RMT_WORDS = (
-    "реклам",
-    "продам акк",
-    "продажа вирт",
-    "покупка вирт",
-    "вирты",
-    "за реал",
-    "куплю вирт",
-)
-QUESTION_WORDS = (
-    "как ",
-    "где ",
-    "когда ",
-    "сколько ",
-    "почему ",
-    "не могу ",
-    "подскаж",
-    "қалай",
-    "қандай",
-    "qanday",
-    "how",
-)
 
 
 class TicketClassifier:
     """
-    Высокоскоростной гибридный классификатор категорий и приоритетов:
-    - Таксономические якоря из taxonomy.json (Zero False Negatives)
-    - Две обученные CatBoost-модели: category (14 классов) и priority (p0-p3)
-    - Текстовый TF-IDF char_wb (3, 5) n-gram векторизатор
-    - Инференс < 20 мс
-    - Расчет вероятности (confidence)
-    - При confidence < 0.55 -> needs_human = True
+    Автономный динамический семантический классификатор (Universal Domain-Agnostic Classifier):
+    - Не требует предварительно обученных игровых весов (.cbm)
+    - Автоматически строит семантический индекс по категориям активной базы знаний (RAG)
+    - Вычисляет категорию и уверенность (confidence) через TF-IDF n-gram косинусное сходство
+    - Мгновенно адаптируется к любой загруженной базе знаний (E-commerce, SaaS, Финтех, Гейминг)
+    - Автоматически определяет приоритет тикета (p0 - p3) на основе рисков безопасности и финансов
     """
 
     def __init__(
@@ -196,37 +35,43 @@ class TicketClassifier:
         prio_path: str | None = None,
         meta_path: str | None = None,
         thread_count: int | None = None,
+        rules_path: str | None = None,
     ):
-        self.cbm_path = cbm_path or (
-            CAT_MODEL_PATH if os.path.exists(CAT_MODEL_PATH) else CBM_MODEL_PATH
-        )
-        self.prio_path = prio_path or PRIO_MODEL_PATH
-        self.meta_path = meta_path or META_PATH
+        self.rules_path = rules_path or get_active_rules_path()
         self.thread_count = thread_count
-        if self.thread_count is None:
-            cfg_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "admin_config.json")
-            if os.path.exists(cfg_path):
-                try:
-                    import json
-                    with open(cfg_path, "r", encoding="utf-8") as f:
-                        cfg = json.load(f)
-                    self.thread_count = cfg.get("cpu_threads")
-                except Exception:
-                    pass
-        if self.thread_count is not None:
-            try:
-                os.environ["OMP_NUM_THREADS"] = str(self.thread_count)
-                os.environ["MKL_NUM_THREADS"] = str(self.thread_count)
-            except Exception:
-                pass
+        self.categories: list[str] = []
+        self.category_docs: dict[str, str] = {}
+        self.rule_ref_to_cat: dict[str, str] = {}
+        self.vectorizer: TfidfVectorizer | None = None
+        self.category_matrix = None
 
+        # Optional legacy CatBoost fallback if files exist
         self.catboost_model = None
         self.prio_model = None
-        self.meta = None
-        self.lr_model = None
-        self.lr_vectorizer = None
-        self.lr_classes = None
-        self._load()
+        self._load_legacy_weights(cbm_path, prio_path)
+
+        # Build dynamic semantic index from active rules
+        self.reindex_from_rules(self.rules_path)
+
+    def _load_legacy_weights(self, cbm_path: str | None, prio_path: str | None) -> None:
+        cbm_file = cbm_path or CAT_MODEL_PATH
+        prio_file = prio_path or PRIO_MODEL_PATH
+        if os.path.exists(cbm_file):
+            try:
+                from catboost import CatBoostClassifier
+
+                self.catboost_model = CatBoostClassifier()
+                self.catboost_model.load_model(cbm_file)
+            except Exception:
+                self.catboost_model = None
+        if os.path.exists(prio_file):
+            try:
+                from catboost import CatBoostClassifier
+
+                self.prio_model = CatBoostClassifier()
+                self.prio_model.load_model(prio_file)
+            except Exception:
+                self.prio_model = None
 
     def set_thread_count(self, threads: int) -> None:
         self.thread_count = max(1, int(threads))
@@ -236,167 +81,159 @@ class TicketClassifier:
         except Exception:
             pass
 
-    def _load(self):
-        if os.path.exists(self.cbm_path) and os.path.exists(self.meta_path):
+    def reindex_from_rules(self, rules_source: str | dict | list | None = None) -> None:
+        """Динамически перестраивает классификатор на основе активных правил."""
+        source = rules_source or self.rules_path
+        data: dict[str, Any] = {}
+        if isinstance(source, str) and os.path.exists(source):
             try:
-                from catboost import CatBoostClassifier
-
-                self.catboost_model = CatBoostClassifier()
-                self.catboost_model.load_model(self.cbm_path)
-                self.meta = joblib.load(self.meta_path)
+                with open(source, "r", encoding="utf-8") as f:
+                    data = json.load(f)
             except Exception:
-                self.catboost_model = None
+                data = {}
+        elif isinstance(source, (dict, list)):
+            data = parse_rules_content(source)
 
-        if os.path.exists(self.prio_path):
-            try:
-                from catboost import CatBoostClassifier
+        if not data:
+            # Fallback to default enterprise categories
+            self.categories = [
+                "support.faq",
+                "support.sla",
+                "account.security",
+                "account.recovery",
+                "billing.payment",
+                "billing.refund",
+                "tech.bug",
+                "tech.outage",
+                "moderation.abuse",
+                "moderation.spam",
+            ]
+            return
 
-                self.prio_model = CatBoostClassifier()
-                self.prio_model.load_model(self.prio_path)
-            except Exception:
-                self.prio_model = None
+        parsed = parse_rules_content(data)
+        category_texts: dict[str, list[str]] = {}
+        self.rule_ref_to_cat.clear()
 
-        if os.path.exists(JOBLIB_MODEL_PATH):
-            try:
-                data = joblib.load(JOBLIB_MODEL_PATH)
-                self.lr_model = data.get("model")
-                self.lr_vectorizer = data.get("vectorizer")
-                self.lr_classes = data.get("classes")
-            except Exception:
-                pass
+        for sec in parsed.get("rules", []):
+            sec_title = sec.get("category", "")
+            for pt in sec.get("points", []):
+                ref = str(pt.get("ref", "")).strip()
+                title = str(pt.get("title", "")).strip()
+                cat = str(pt.get("category") or "general.support").strip()
+                text = str(pt.get("text", "")).strip()
+                kw = pt.get("keywords", [])
+                kw_str = " ".join(kw) if isinstance(kw, list) else str(kw)
+
+                if ref and cat:
+                    self.rule_ref_to_cat[ref] = cat
+
+                if cat not in category_texts:
+                    category_texts[cat] = []
+
+                # Формируем семантический профиль категории
+                category_texts[cat].append(f"{sec_title} {title} {kw_str} {text}")
+
+        self.categories = sorted(list(category_texts.keys()))
+        self.category_docs = {
+            cat: " ".join(texts).lower() for cat, texts in category_texts.items()
+        }
+
+        if self.categories:
+            docs = [self.category_docs[cat] for cat in self.categories]
+            self.vectorizer = TfidfVectorizer(
+                ngram_range=(1, 2),
+                min_df=1,
+                sublinear_tf=True,
+            )
+            self.category_matrix = self.vectorizer.fit_transform(docs)
+            logger.info(
+                f"Dynamic classifier reindexed: {len(self.categories)} categories active"
+            )
 
     def is_trained(self) -> bool:
-        return self.catboost_model is not None or self.lr_model is not None
+        """Система полностью функциональна и готова к автономной классификации."""
+        return len(self.categories) > 0 and self.vectorizer is not None
 
     def predict_classes(
         self, text: str, kind: str = "complaint", images_count: int = 0
     ) -> dict[str, Any]:
         """
-        Быстрый инференс (< 20 мс) по обученным CatBoost моделям:
-        возвращает предсказанные категорию, приоритет и confidence.
+        Автономный высокоскоростной инференс:
+        Определяет категорию по максимальной семантической близости к регламентам.
         """
         text_norm = normalize_cp1251_kz(str(text or ""))
         text_lower = text_norm.lower().replace("ё", "е")
         img_cnt = float(images_count or 0)
-        is_complaint = 1.0 if kind == "complaint" else 0.0
-        text_len = float(len(text_norm))
 
         category = None
-        priority = None
-        confidence = 0.85
+        confidence = 0.75
 
-        # 0. Check strong taxonomy rule anchors
+        # 1. Прямой поиск ссылки на статью правил в тексте (например: "по пункту 2.1")
         clean_refs = re.findall(r"\b\d+\.\d+\b", text_norm)
-        if (
-            clean_refs
-            and clean_refs[0] in TAXONOMY_RULE_ANCHORS
-            and kind == "complaint"
-        ):
-            category = TAXONOMY_RULE_ANCHORS[clean_refs[0]]
-            confidence = 0.95
-        elif kind == "complaint":
-            if any(w in text_lower for w in ADMIN_WORDS):
-                category = "complaint.admin"
+        for r in clean_refs:
+            if r in self.rule_ref_to_cat:
+                category = self.rule_ref_to_cat[r]
                 confidence = 0.95
-            elif any(w in text_lower for w in INSULT_WORDS):
-                category = "complaint.insult"
-                confidence = 0.95
-            elif any(w in text_lower for w in CHEAT_WORDS):
-                category = "complaint.cheat"
-                confidence = 0.95
-            elif any(w in text_lower for w in SCAM_WORDS):
-                category = "complaint.scam"
-                confidence = 0.95
-            elif any(w in text_lower for w in RMT_WORDS):
-                category = "complaint.rmt_ads"
-                confidence = 0.95
-            elif any(w in text_lower for w in DM_WORDS):
-                category = "complaint.dm"
-                confidence = 0.95
-        elif kind == "report":
-            if any(w in text_lower for w in PAYMENT_WORDS):
-                category = "report.payment"
-                confidence = 0.95
-            elif any(w in text_lower for w in ACCOUNT_WORDS):
-                category = "report.account"
-                confidence = 0.95
-            elif any(w in text_lower for w in HELP_WORDS):
-                category = "report.help"
-                confidence = 0.95
-            elif any(w in text_lower for w in QUESTION_WORDS):
-                category = "report.question"
-                confidence = 0.95
+                break
 
-        # 1. CatBoost Inference for Category if not determined by strong anchor
-        if (
-            category is None
-            and self.catboost_model is not None
-            and self.meta is not None
-        ):
+        # 2. Быстрый семантический поиск по профилям категорий через TF-IDF косинусное сходство
+        if category is None and self.vectorizer is not None and self.category_matrix is not None:
             try:
-                vec = self.meta["vectorizer"].transform([text_norm])
-                meta_arr = np.array(
-                    [[is_complaint, img_cnt, text_len]], dtype=np.float32
-                )
-                X_feat = sparse.hstack([vec, meta_arr]).tocsr()
+                ticket_vec = self.vectorizer.transform([text_lower])
+                sims = cosine_similarity(ticket_vec, self.category_matrix)[0]
+                best_idx = int(sims.argmax())
+                best_sim = float(sims[best_idx])
 
-                if self.thread_count:
-                    probs = self.catboost_model.predict_proba(X_feat, thread_count=self.thread_count)[0]
-                else:
-                    probs = self.catboost_model.predict_proba(X_feat)[0]
-                best_idx = int(probs.argmax())
-                confidence = float(probs[best_idx])
-                id2cat = self.meta.get("id2cat") or self.meta.get("id_to_class")
-                category = id2cat[best_idx]
-            except Exception:
-                category = None
+                if best_sim > 0.04:
+                    category = self.categories[best_idx]
+                    # Масштабируем уверенность: 0.10 -> 0.72, 0.30 -> 0.88, >0.50 -> 0.95
+                    confidence = min(0.98, max(0.60, 0.65 + best_sim * 0.7))
+            except Exception as e:
+                logger.warning(f"Semantic similarity error: {e}")
 
-        # Fallback category
+        # 3. Базовый фолбэк по умолчанию
         if category is None:
-            category, _ = label_ticket(
-                {"kind": kind, "images_count": images_count}, text_norm
-            )
-            confidence = 0.80
+            if self.categories:
+                category = self.categories[0]
+            else:
+                category = "support.faq"
+            confidence = 0.50
 
-        # Taxonomy priority calculation strictly adhering to taxonomy.json rules
+        # 4. Расчет приоритета (Priority calculation p0 - p3)
+        cat_lower = category.lower()
         has_evidence = img_cnt > 0 or any(
             w in text_lower
             for w in [
                 "скрин",
+                "чек",
                 "видео",
-                "фрапс",
-                "пруф",
-                "дәлел",
-                "skrin",
-                "<url>",
-                "доки",
+                "квитанция",
+                "выписка",
                 "доказательств",
+                "proof",
+                "screen",
+                "<url>",
             ]
         )
 
-        if category == "report.payment" or (
-            category == "report.account"
-            and any(
-                w in text_lower
-                for w in ["взлом", "украли", "пароль", "hacked", "доступ"]
-            )
-        ):
+        is_critical_security = any(
+            w in cat_lower for w in ["security", "recovery", "взлом", "парол"]
+        ) or any(
+            w in text_lower
+            for w in ["украли", "взлом", "сменили пароль", "чужой вход", "hacked"]
+        )
+        is_payment_issue = any(
+            w in cat_lower for w in ["payment", "billing", "refund", "плат", "чек"]
+        ) or any(
+            w in text_lower
+            for w in ["списались деньги", "не пришли деньги", "возврат средств", "ошибка оплаты"]
+        )
+
+        if is_critical_security or (is_payment_issue and has_evidence):
             priority = "p0"
-        elif category in ["complaint.cheat", "complaint.scam", "complaint.rmt_ads"]:
+        elif is_payment_issue or any(w in cat_lower for w in ["abuse", "scam", "cheat", "outage"]):
             priority = "p1"
-        elif kind == "complaint" and not has_evidence:
-            priority = "p3"
-        elif (
-            kind == "complaint"
-            and category
-            in [
-                "complaint.insult",
-                "complaint.dm",
-                "complaint.admin",
-                "complaint.other",
-            ]
-            or category == "report.complaint"
-        ):
+        elif has_evidence or any(w in cat_lower for w in ["bug", "complaint", "tech"]):
             priority = "p2"
         else:
             priority = "p3"
@@ -410,10 +247,8 @@ class TicketClassifier:
     def predict(
         self, ticket: dict[str, Any], text: str, has_evidence: bool = False
     ) -> dict[str, Any]:
-        """
-        Предсказывает категорию, приоритет и confidence для полного объекта тикета.
-        """
-        kind = str(ticket.get("kind") or "complaint")
+        """Предсказывает категорию и приоритет для полного объекта тикета."""
+        kind = str(ticket.get("kind") or "report")
         raw_refs = str(ticket.get("rule_refs_raw", "") or "")
         combined_text = f"{raw_refs} {text}".strip()
         try:
@@ -426,8 +261,6 @@ class TicketClassifier:
             text=combined_text, kind=kind, images_count=img_cnt
         )
         confidence = preds["confidence"]
-        # СЛУЧАЙ 3 (Неуверенность модели): Если классификатор не уверен в категории (confidence < 0.55),
-        # тикет обязательно маркируется для передачи живому администратору (needs_human = True).
         needs_human_conf = confidence < 0.55
 
         return {
@@ -436,25 +269,3 @@ class TicketClassifier:
             "confidence": confidence,
             "low_confidence_needs_human": needs_human_conf,
         }
-
-
-# Singleton instance for high-speed inference (< 20 ms) without re-loading models
-_DEFAULT_CLASSIFIER: TicketClassifier | None = None
-
-
-def get_default_classifier() -> TicketClassifier:
-    global _DEFAULT_CLASSIFIER
-    if _DEFAULT_CLASSIFIER is None:
-        _DEFAULT_CLASSIFIER = TicketClassifier()
-    return _DEFAULT_CLASSIFIER
-
-
-def predict_classes(
-    text: str, kind: str = "complaint", images_count: int = 0
-) -> dict[str, Any]:
-    """
-    Быстрый инференс (< 20 мс) по обученным моделям CatBoost:
-    возвращает предсказанные категорию, приоритет и confidence (вероятность).
-    """
-    classifier = get_default_classifier()
-    return classifier.predict_classes(text=text, kind=kind, images_count=images_count)

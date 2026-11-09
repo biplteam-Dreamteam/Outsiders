@@ -18,6 +18,12 @@ from src.guardrails import check_guardrails, sanitize_draft
 from src.llm_client import FALLBACK_TEMPLATES, LLMClient
 from src.preprocessor import detect_language, extract_facts, normalize_cp1251_kz
 from src.rag_engine import RAGEngine
+from src.rule_manager import (
+    DEFAULT_RULES_PATH,
+    get_active_rules_path,
+    parse_rules_content,
+    save_active_rules,
+)
 
 CONFIG_FILE = os.path.join("data", "admin_config.json")
 CUSTOM_TEMPLATES_FILE = os.path.join("data", "custom_templates.json")
@@ -76,8 +82,8 @@ def save_admin_config(cfg: dict):
 @st.cache_resource
 def load_engines():
     cfg = load_admin_config()
-    classifier = TicketClassifier(thread_count=cfg.get("cpu_threads"))
-    rag = RAGEngine("rules.json")
+    rag = RAGEngine()
+    classifier = TicketClassifier(rules_path=rag.rules_path, thread_count=cfg.get("cpu_threads"))
     llm = LLMClient()
     sim_val = float(cfg.get("dedup_similarity_threshold", 0.85))
     sim_pct = sim_val * 100.0 if sim_val <= 1.0 else sim_val
@@ -325,7 +331,7 @@ mode_short_map = {
 }
 kpi1.metric("Режим модели", mode_short_map.get(admin_cfg.get("operating_mode", "full"), "Полный"), "Инференс активен")
 kpi2.metric("Выделено CPU", f"{admin_cfg.get('cpu_threads', 8)} ядер", f"из {total_cpu_cores} доступных")
-kpi3.metric("База знаний", "101 правило", "11 разделов")
+kpi3.metric("База знаний", f"{len(rag.get_valid_rules_dict())} правил", f"{len(classifier.categories)} категорий")
 kpi4.metric("Порог уверенности", f"{admin_cfg.get('confidence_threshold', 0.55):.2f}", "Guardrails")
 kpi5.metric("Стоимость токенов", "$0.0000", "100% On-Premise")
 
@@ -623,66 +629,136 @@ with tab_config:
             st.rerun()
 
 # ==============================================================================
-# TAB 3: БАЗА ЗНАНИЙ И ПРАВИЛА
+# TAB 3: БАЗА ЗНАНИЙ И ДИНАМИЧЕСКИЕ ПРАВИЛА
 # ==============================================================================
 with tab_rules:
-    st.subheader("📖 Редактор базы знаний (101 утвержденное правило)")
+    st.subheader("📖 База знаний и Регламенты компании («Via автоматизация»)")
+    st.markdown(
+        "Система полностью автономна: загрузите регламент вашей компании (**JSON, Markdown или TXT**), "
+        "и ИИ мгновенно переиндексирует базу знаний, обучит семантический классификатор и начнет "
+        "отвечать клиентам строго по вашим правилам."
+    )
 
-    rules_dict = rag.get_valid_rules_dict()
-    rules_table_data = []
-    for ref, text in sorted(rules_dict.items(), key=lambda x: str(x[0])):
-        rules_table_data.append({"Пункт": ref, "Текст правила": text})
-
-    df_rules = pd.DataFrame(rules_table_data)
-
-    r_search = st.text_input("🔍 Поиск по номеру статьи или ключевым словам правила:", "")
-    if r_search:
-        df_rules = df_rules[
-            df_rules["Пункт"].str.contains(r_search, case=False)
-            | df_rules["Текст правила"].str.contains(r_search, case=False)
-        ]
-
-    st.dataframe(df_rules, use_container_width=True, height=360)
+    # 1. СТАТУС АКТИВНОЙ БАЗЫ ЗНАНИЙ
+    r_col1, r_col2, r_col3, r_col4 = st.columns(4)
+    r_col1.metric("Активных правил", f"{len(rag.get_valid_rules_dict())} статей", "В памяти RAG")
+    r_col2.metric("Категорий классификатора", f"{len(classifier.categories)} классов", "Динамический индекс")
+    r_col3.metric("Режим работы", "100% Автономный", "Без жестких весов")
+    r_col4.metric("Источник правил", os.path.basename(rag.rules_path), "Hot-Reload готов")
 
     st.markdown("---")
-    st.markdown("#### ➕ Добавить или отредактировать правило")
-    with st.form("rule_edit_form"):
-        col_r1, col_r2 = st.columns([1, 3])
-        with col_r1:
-            rule_ref_input = st.text_input("Номер статьи (Ref, например: 5.10):", "")
-            rule_sec_input = st.text_input("Раздел (Section):", "V. ПРАВИЛА ИГРОВОГО ПРОЦЕССА")
-        with col_r2:
-            rule_text_input = st.text_area("Полный текст правила и санкций:", height=110)
 
-        submit_rule = st.form_submit_button("💾 Сохранить правило в rules.json", type="primary")
-        if submit_rule:
-            if not rule_ref_input or not rule_text_input:
-                st.error("Пожалуйста, заполните номер статьи и текст правила.")
-            else:
+    # 2. ЗАГРУЗКА НОВОЙ БАЗЫ ЗНАНИЙ
+    st.markdown("### 📤 Загрузка новой базы знаний / регламентов компании")
+    up_col1, up_col2 = st.columns([1, 1])
+
+    with up_col1:
+        uploaded_rules_file = st.file_uploader(
+            "Перетащите файл регламента (JSON, Markdown, TXT):",
+            type=["json", "txt", "md"],
+            help="Поддерживается структурированный JSON, плоский список правил или текстовый Markdown с заголовками # и пунктами 1.1",
+        )
+
+    with up_col2:
+        pasted_rules_text = st.text_area(
+            "Или вставьте текст регламента / JSON вручную:",
+            height=140,
+            placeholder="## 1. Регламент обслуживания\n1.1 Время ответа саппорта до 15 минут.\n1.2 График работы 24/7...",
+        )
+
+    btn_col1, btn_col2, btn_col3 = st.columns([1, 1, 1])
+
+    with btn_col1:
+        if st.button("🚀 Применить и переиндексировать ИИ", type="primary"):
+            content_to_apply = None
+            if uploaded_rules_file is not None:
+                content_to_apply = uploaded_rules_file.getvalue().decode("utf-8", errors="replace")
+            elif pasted_rules_text.strip():
+                content_to_apply = pasted_rules_text.strip()
+
+            if content_to_apply:
                 try:
-                    with open("rules.json", "r", encoding="utf-8") as rf:
-                        r_raw = json.load(rf)
-                    # Add point
-                    added = False
-                    for sec in r_raw.get("rules", []):
-                        if sec.get("category") == rule_sec_input or not added:
-                            if "points" not in sec:
-                                sec["points"] = []
-                            # Check if exists
-                            existing = [p for p in sec["points"] if p.get("ref") == rule_ref_input]
-                            if existing:
-                                existing[0]["text"] = rule_text_input
-                            else:
-                                sec["points"].append({"ref": rule_ref_input, "text": rule_text_input})
-                            added = True
-                            break
-                    with open("rules.json", "w", encoding="utf-8") as rf:
-                        json.dump(r_raw, rf, ensure_ascii=False, indent=1)
+                    parsed_rules = parse_rules_content(content_to_apply)
+                    saved_path = save_active_rules(parsed_rules)
+                    rag.reload_rules(saved_path)
+                    classifier.reindex_from_rules(saved_path)
                     st.cache_resource.clear()
-                    st.success(f"Правило {rule_ref_input} успешно сохранено в rules.json!")
+                    st.success(
+                        f"🎉 База знаний успешно обновлена! Загружено правил: {len(rag.get_valid_rules_dict())}, "
+                        f"категорий: {len(classifier.categories)}. ИИ переиндексирован на лету!"
+                    )
                     st.rerun()
                 except Exception as ex:
-                    st.error(f"Ошибка сохранения: {ex}")
+                    st.error(f"Ошибка парсинга базы знаний: {ex}")
+            else:
+                st.warning("Пожалуйста, выберите файл или вставьте текст правил для загрузки.")
+
+    with btn_col2:
+        if st.button("🔄 Сбросить к базовому регламенту (Default)", type="secondary"):
+            try:
+                if os.path.exists(DEFAULT_RULES_PATH):
+                    with open(DEFAULT_RULES_PATH, "r", encoding="utf-8") as df:
+                        default_rules = json.load(df)
+                    save_active_rules(default_rules)
+                    rag.reload_rules(default_rules)
+                    classifier.reindex_from_rules(default_rules)
+                    st.cache_resource.clear()
+                    st.success("База знаний сброшена к базовому корпоративному регламенту!")
+                    st.rerun()
+            except Exception as ex:
+                st.error(f"Ошибка сброса: {ex}")
+
+    with btn_col3:
+        try:
+            active_json_str = json.dumps(rag.validator.get_rules_dict(), ensure_ascii=False, indent=2)
+            st.download_button(
+                label="📥 Скачать активную базу знаний (JSON)",
+                data=active_json_str.encode("utf-8"),
+                file_name="active_rules.json",
+                mime="application/json",
+            )
+        except Exception:
+            pass
+
+    st.markdown("---")
+
+    # 3. ТАБЛИЦА АКТИВНЫХ ПРАВИЛ И ПОИСК
+    st.markdown("### 🔍 Просмотр и поиск по активным статьям")
+    rules_points = rag.validator.get_points_list()
+    rules_table_data = []
+    for pt in rules_points:
+        rules_table_data.append({
+            "Пункт": pt.get("ref", ""),
+            "Раздел": pt.get("section", ""),
+            "Заголовок": pt.get("title", ""),
+            "Категория": pt.get("category", ""),
+            "Текст правила": pt.get("text", ""),
+        })
+
+    df_rules = pd.DataFrame(rules_table_data)
+    r_search = st.text_input("🔍 Быстрый фильтр по ключевым словам или номеру статьи:", "")
+    if r_search and not df_rules.empty:
+        mask = (
+            df_rules["Пункт"].astype(str).str.contains(r_search, case=False, na=False)
+            | df_rules["Раздел"].astype(str).str.contains(r_search, case=False, na=False)
+            | df_rules["Заголовок"].astype(str).str.contains(r_search, case=False, na=False)
+            | df_rules["Категория"].astype(str).str.contains(r_search, case=False, na=False)
+            | df_rules["Текст правила"].astype(str).str.contains(r_search, case=False, na=False)
+        )
+        df_rules = df_rules[mask]
+
+    st.dataframe(df_rules, use_container_width=True, height=350)
+
+    # 4. ТЕСТОВЫЙ ПОИСКОВИК RAG
+    st.markdown("#### 🧪 Тестовый RAG-запрос к базе знаний")
+    rag_test_q = st.text_input("Введите тестовый вопрос клиента:", "Как восстановить доступ к аккаунту?")
+    if st.button("🔎 Найти подходящие статьи регламента"):
+        retrieved = rag.retrieve(rag_test_q, top_k=3)
+        if retrieved:
+            for item in retrieved:
+                st.info(f"**[{item.get('ref')}] {item.get('title', '')}** ({item.get('section', '')})\n\n{item.get('text', '')}")
+        else:
+            st.warning("По данному запросу точных статей не найдено.")
 
 # ==============================================================================
 # TAB 4: СТУДИЯ ШАБЛОНОВ

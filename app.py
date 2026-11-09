@@ -1,10 +1,11 @@
+import json
 import logging
 import os
 import sys
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, ORJSONResponse
 from pydantic import BaseModel
 
@@ -19,9 +20,15 @@ from src.crm_connectors import CRMConnectorManager
 from src.guardrails import sanitize_draft
 from src.pipeline import SupportCopilotPipeline
 from src.rag_engine import RuleValidator
+from src.rule_manager import (
+    DEFAULT_RULES_PATH,
+    get_active_rules_path,
+    parse_rules_content,
+    save_active_rules,
+)
 
 # Initialize RuleValidator singleton for Level 2 & 3 verification
-rule_validator = RuleValidator("rules.json")
+rule_validator = RuleValidator()
 
 # Initialize B2B CRM & Auto-Reply Manager
 crm_manager = CRMConnectorManager()
@@ -29,9 +36,9 @@ crm_manager = CRMConnectorManager()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting Grand Mobile Support Copilot Service...")
+    logger.info("Starting Via Automation Enterprise Service...")
     yield
-    logger.info("Shutting down Grand Mobile Support Copilot Service...")
+    logger.info("Shutting down Via Automation Enterprise Service...")
     try:
         await pipeline.llm.aclose()
     except Exception as e:
@@ -39,9 +46,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Grand Mobile Support Copilot API",
-    description="Интеллектуальный сервис триажа, RAG и черновиков ответов для Grand Mobile (Decentrathon 6.0, Case 03)",
-    version="1.0.0",
+    title="Via Automation Enterprise Support API",
+    description="Универсальный автономный сервис поддержки, триажа и динамической базы знаний («Via автоматизация»)",
+    version="2.0.0",
     lifespan=lifespan,
     default_response_class=ORJSONResponse,
 )
@@ -273,6 +280,98 @@ def update_crm_config(config_update: dict[str, Any]):
     try:
         crm_manager.save_config(config_update)
         return {"status": "success", "config": crm_manager.config}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+
+
+# =============================================================================
+# 📖 Динамическое управление базой знаний и правилами компании
+# =============================================================================
+
+@app.post("/rules/upload")
+async def upload_rules(request: Request):
+    """
+    Загрузка и динамическое обновление базы знаний компании:
+    - Принимает JSON со структурой правил или произвольный текст/Markdown
+    - Поддерживает application/json, multipart/form-data и text/plain
+    - Мгновенно переиндексирует RAG и классификатор без остановки сервиса
+    """
+    try:
+        content_type = request.headers.get("content-type", "")
+        content_to_parse = None
+
+        if "multipart/form-data" in content_type:
+            form = await request.form()
+            file = form.get("file")
+            if file and hasattr(file, "read"):
+                raw_bytes = await file.read()
+                content_to_parse = raw_bytes.decode("utf-8", errors="replace")
+            else:
+                text_field = form.get("text") or form.get("rules")
+                if text_field:
+                    content_to_parse = str(text_field)
+        elif "application/json" in content_type:
+            content_to_parse = await request.json()
+        else:
+            raw_body = await request.body()
+            content_to_parse = raw_body.decode("utf-8", errors="replace")
+
+        if not content_to_parse:
+            return JSONResponse(
+                status_code=400,
+                content={"status": "error", "message": "No rules content or file provided"},
+            )
+
+        parsed = parse_rules_content(content_to_parse)
+        saved_path = save_active_rules(parsed)
+        pipeline.reload_rules(saved_path)
+        rule_validator.load_from_data(parsed)
+
+        return {
+            "status": "success",
+            "message": "База знаний успешно обновлена и переиндексирована на лету",
+            "name": parsed.get("name"),
+            "rules_count": len(rule_validator),
+            "categories": pipeline.classifier.categories,
+            "rules_path": saved_path,
+        }
+    except Exception as e:
+        logger.error(f"Failed to upload rules: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+
+
+@app.get("/rules/active")
+def get_active_rules():
+    """Возвращает текущую активную базу знаний и список категорий."""
+    return {
+        "rules_count": len(rule_validator),
+        "valid_refs": sorted(list(rule_validator.get_valid_rules())),
+        "categories": pipeline.classifier.categories,
+        "points": rule_validator.get_points_list(),
+    }
+
+
+@app.post("/rules/reset")
+def reset_rules():
+    """Сбрасывает базу знаний к базовому корпоративному регламенту."""
+    try:
+        if os.path.exists(DEFAULT_RULES_PATH):
+            with open(DEFAULT_RULES_PATH, "r", encoding="utf-8") as f:
+                default_data = json.load(f)
+            save_active_rules(default_data)
+            pipeline.reload_rules(default_data)
+            rule_validator.load_from_data(default_data)
+            return {
+                "status": "success",
+                "message": "База знаний сброшена к базовому корпоративному регламенту",
+                "rules_count": len(rule_validator),
+                "categories": pipeline.classifier.categories,
+            }
+        else:
+            return JSONResponse(
+                status_code=404,
+                content={"status": "error", "message": "Default rules file not found"},
+            )
     except Exception as e:
         return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 

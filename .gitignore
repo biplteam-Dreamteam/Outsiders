@@ -8,6 +8,12 @@ pred*.jsonl
 data/rlhf.jsonl
 data/admin_feedback_rlhf.jsonl
 
+# Models and legacy weights
+*.cbm
+*.joblib
+*.onnx
+models/legacy_game_weights/
+
 # Python cache & build
 __pycache__/
 *.py[cod]

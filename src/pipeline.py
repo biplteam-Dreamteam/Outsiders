@@ -63,7 +63,7 @@ class SupportCopilotPipeline:
 
     def __init__(
         self,
-        rules_path: str = "rules.json",
+        rules_path: str | None = None,
         model_path: str | None = None,
         config_path: str = CONFIG_PATH_DEFAULT,
     ):
@@ -73,8 +73,12 @@ class SupportCopilotPipeline:
         self.cpu_threads = int(self.config.get("cpu_threads", 8))
         self.ram_limit_mb = int(self.config.get("ram_limit_mb", 2048))
 
-        self.classifier = TicketClassifier(model_path, thread_count=self.cpu_threads)
         self.rag = RAGEngine(rules_path)
+        self.classifier = TicketClassifier(
+            model_path,
+            thread_count=self.cpu_threads,
+            rules_path=self.rag.rules_path,
+        )
         self.llm = LLMClient()
         sim_val = float(self.config.get("dedup_similarity_threshold", 0.85))
         sim_pct = sim_val * 100.0 if sim_val <= 1.0 else sim_val
@@ -82,6 +86,12 @@ class SupportCopilotPipeline:
             max_tickets_per_hour=int(self.config.get("max_tickets_per_hour", 5)),
             similarity_threshold=sim_pct,
         )
+
+    def reload_rules(self, new_rules_source: str | dict | list | None = None) -> None:
+        """Мгновенно перезагружает базу знаний и переиндексирует классификатор без остановки сервиса."""
+        self.rag.reload_rules(new_rules_source)
+        if hasattr(self.classifier, "reindex_from_rules"):
+            self.classifier.reindex_from_rules(self.rag.validator.get_rules_dict())
 
     def reload_config(self) -> None:
         """Перезагружает конфигурацию из файла в рантайме без перезапуска процесса."""
