@@ -5,6 +5,7 @@ import sys
 import time
 
 import pandas as pd
+import psutil
 import streamlit as st
 
 # Setup paths
@@ -32,13 +33,12 @@ st.set_page_config(
 
 # Configuration Loader & Saver
 def load_admin_config() -> dict:
-    if os.path.exists(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {
+    default_cfg = {
+        "operating_mode": "full",
+        "cpu_threads": min(8, os.cpu_count() or 4),
+        "ram_limit_mb": 2048,
+        "batch_chunk_size": 64,
+        "aggressive_gc": False,
         "confidence_threshold": 0.55,
         "human_required_categories": [
             "report.account",
@@ -51,6 +51,15 @@ def load_admin_config() -> dict:
         "dedup_similarity_threshold": 0.85,
         "active_model": "CatBoost CBM (Fast-Path)",
     }
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+                if isinstance(saved, dict):
+                    default_cfg.update(saved)
+        except Exception:
+            pass
+    return default_cfg
 
 
 def save_admin_config(cfg: dict):
@@ -61,10 +70,16 @@ def save_admin_config(cfg: dict):
 # Initialize engines in session state
 @st.cache_resource
 def load_engines():
-    classifier = TicketClassifier()
+    cfg = load_admin_config()
+    classifier = TicketClassifier(thread_count=cfg.get("cpu_threads"))
     rag = RAGEngine("rules.json")
     llm = LLMClient()
-    dedup = TicketDeduplicator()
+    sim_val = float(cfg.get("dedup_similarity_threshold", 0.85))
+    sim_pct = sim_val * 100.0 if sim_val <= 1.0 else sim_val
+    dedup = TicketDeduplicator(
+        max_tickets_per_hour=int(cfg.get("max_tickets_per_hour", 5)),
+        similarity_threshold=sim_pct,
+    )
     return classifier, rag, llm, dedup
 
 
@@ -88,6 +103,10 @@ def triage_ticket_sync(ticket: dict, config: dict) -> dict:
         ticket, clean_text, ticket.get("rule_refs_raw"), ticket.get("images_count")
     )
     is_spam = dedup.check_and_update(ticket, clean_text)
+
+    # Sync classifier thread count with config
+    if hasattr(classifier, "set_thread_count") and config.get("cpu_threads"):
+        classifier.set_thread_count(config["cpu_threads"])
 
     cls_res = classifier.predict(ticket, clean_text, extracted["has_evidence"])
     category = cls_res["category"]
@@ -116,15 +135,25 @@ def triage_ticket_sync(ticket: dict, config: dict) -> dict:
         needs_human = True
         reasons.append("Обнаружен спам или дубликат обращения")
 
-    rules = rag.retrieve(
-        clean_text, category=category, extracted_refs=extracted["rule_refs"], top_k=2
-    )
-    fallback_res = llm.generate_fallback(
-        lang, ticket, category, rules, extracted["nickname"]
-    )
-    clean_draft_text, clean_cited = sanitize_draft(
-        fallback_res["text"], fallback_res["cited"], rag.get_valid_rules_dict()
-    )
+    op_mode = config.get("operating_mode", "full")
+    if op_mode == "triage_only":
+        clean_draft_text = ""
+        clean_cited = []
+        rules = []
+    else:
+        if op_mode == "copilot_only":
+            needs_human = True
+            reasons.append("Режим 'Ассистент модератора': требуется утверждение черновика оператором")
+
+        rules = rag.retrieve(
+            clean_text, category=category, extracted_refs=extracted["rule_refs"], top_k=2
+        )
+        fallback_res = llm.generate_fallback(
+            lang, ticket, category, rules, extracted["nickname"]
+        )
+        clean_draft_text, clean_cited = sanitize_draft(
+            fallback_res["text"], fallback_res["cited"], rag.get_valid_rules_dict()
+        )
 
     return {
         "ticket_id": ticket.get("ticket_id", "demo"),
@@ -196,6 +225,58 @@ def load_tickets_cache():
 
 tickets_raw = load_tickets_cache()
 
+# System Hardware Stats
+vm_info = psutil.virtual_memory()
+ram_used_gb = (vm_info.total - vm_info.available) / (1024**3)
+ram_total_gb = vm_info.total / (1024**3)
+total_cpu_cores = os.cpu_count() or 16
+
+# Sidebar Control Center
+with st.sidebar:
+    st.markdown("### 🛡️ Grand Mobile Copilot")
+    st.caption("Enterprise Control Panel v2.5")
+
+    st.markdown("---")
+    st.markdown("#### 🎛️ Режим работы модели")
+    mode_options = {
+        "full": "🟢 Полный автопилот (Ответы + Черновики)",
+        "triage_only": "⚡ Только классификация (Triage Only)",
+        "copilot_only": "🛡️ Ассистент (Human-in-the-Loop)",
+    }
+    cur_mode = admin_cfg.get("operating_mode", "full")
+    sel_mode = st.radio(
+        "Быстрое переключение:",
+        options=["full", "triage_only", "copilot_only"],
+        format_func=lambda x: mode_options[x],
+        index=["full", "triage_only", "copilot_only"].index(cur_mode) if cur_mode in ["full", "triage_only", "copilot_only"] else 0,
+        key="quick_mode_radio"
+    )
+    if sel_mode != cur_mode:
+        admin_cfg["operating_mode"] = sel_mode
+        save_admin_config(admin_cfg)
+        st.success(f"Режим переключен: {sel_mode}")
+        st.rerun()
+
+    st.markdown("---")
+    st.markdown("#### 💻 Выделенные ресурсы")
+    col_sb1, col_sb2 = st.columns(2)
+    col_sb1.metric("Ядра CPU", f"{admin_cfg.get('cpu_threads', 8)} / {total_cpu_cores}")
+    col_sb2.metric("Лимит RAM", f"{admin_cfg.get('ram_limit_mb', 2048)} МБ")
+
+    st.caption(f"Системная память: **{ram_used_gb:.1f} ГБ / {ram_total_gb:.1f} ГБ** ({vm_info.percent}%)")
+    st.progress(min(1.0, vm_info.percent / 100.0))
+
+    st.markdown("---")
+    st.markdown("#### 🚀 Быстрые действия")
+    if st.button("🔄 Очистить память (GC)", use_container_width=True):
+        import gc
+        gc.collect()
+        st.info("Память очищена.")
+    if st.button("⚡ Перезагрузить модели", use_container_width=True):
+        st.cache_resource.clear()
+        st.success("Кэш моделей сброшен.")
+        st.rerun()
+
 # Header Banner
 st.markdown(
     """
@@ -209,10 +290,15 @@ st.markdown(
 
 # Top Metrics Row
 kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
-kpi1.metric("Активная модель", "CatBoost CBM", "Fast-Path 3.4 мс")
-kpi2.metric("База знаний", "101 правило", "11 разделов")
-kpi3.metric("Порог уверенности", f"{admin_cfg.get('confidence_threshold', 0.55):.2f}", "Guardrails")
-kpi4.metric("Автоматизация", "52.4%", "Регламентные ответы")
+mode_short_map = {
+    "full": "🟢 Полный автопилот",
+    "triage_only": "⚡ Только классификация",
+    "copilot_only": "🛡️ Ассистент оператора",
+}
+kpi1.metric("Режим модели", mode_short_map.get(admin_cfg.get("operating_mode", "full"), "Полный"), "Инференс активен")
+kpi2.metric("Выделено CPU", f"{admin_cfg.get('cpu_threads', 8)} ядер", f"из {total_cpu_cores} доступных")
+kpi3.metric("База знаний", "101 правило", "11 разделов")
+kpi4.metric("Порог уверенности", f"{admin_cfg.get('confidence_threshold', 0.55):.2f}", "Guardrails")
 kpi5.metric("Стоимость токенов", "$0.0000", "100% On-Premise")
 
 # Main Navigation Tabs
@@ -365,14 +451,72 @@ with tab_queue:
                         st.info("Тикет передан старшему персоналу.")
 
 # ==============================================================================
-# TAB 2: НАСТРОЙКИ И GUARDRAILS
+# TAB 2: НАСТРОЙКИ, РЕЖИМЫ И АППАРАТНЫЕ РЕСУРСЫ
 # ==============================================================================
 with tab_config:
-    st.subheader("⚙️ Управление политиками безопасности и порогами Guardrails")
-    st.markdown("Изменение параметров здесь влияет на распределение обращений между авто-ответом и эскалацией человеку.")
+    st.subheader("⚙️ Управление режимами модели, ресурсами CPU/RAM и Guardrails")
+    st.markdown("Полный контроль над поведением модели, выделением вычислительных мощностей серверов и политиками безопасности.")
 
     with st.form("guardrails_config_form"):
-        st.markdown("#### 1. Пороги доверия классификатора")
+        st.markdown("### 1. 🎛️ Режим работы модели (Ответы vs Классификация)")
+        st.caption("Определяет, генерирует ли модель тексты ответов игрокам или работает как сверхбыстрый классификатор.")
+
+        mode_options_full = {
+            "full": "🟢 Полный автопилот — Классификация + Авто-ответы (Fast-Path) + Черновики (RAG по rules.json)",
+            "triage_only": "⚡ Чистая классификация и маршрутизация (Triage Only) — БЕЗ генерации текста ответов. Сверхбыстрый инференс (< 1 мс/тикет), нулевой расход токенов и памяти.",
+            "copilot_only": "🛡️ Ассистент модератора (Human-in-the-Loop) — Модель готовит черновики с цитатами, но 100% тикетов принудительно направляются живому оператору.",
+        }
+        cur_m = admin_cfg.get("operating_mode", "full")
+        new_mode = st.radio(
+            "Выберите режим функционирования:",
+            options=["full", "triage_only", "copilot_only"],
+            format_func=lambda x: mode_options_full[x],
+            index=["full", "triage_only", "copilot_only"].index(cur_m) if cur_m in ["full", "triage_only", "copilot_only"] else 0,
+        )
+
+        st.markdown("---")
+        st.markdown("### 2. 💻 Выделение аппаратных ресурсов (CPU Cores & RAM Limit)")
+        st.caption("Тонкая настройка производительности и аппаратных ограничений для многоядерных серверов.")
+
+        col_hw1, col_hw2 = st.columns(2)
+        with col_hw1:
+            new_threads = st.slider(
+                "Выделение ядер процессора (CPU Cores / Threads):",
+                min_value=1,
+                max_value=total_cpu_cores,
+                value=int(min(admin_cfg.get("cpu_threads", 8), total_cpu_cores)),
+                help="Количество потоков для CatBoost, параллельной обработки текста и векторизации TF-IDF."
+            )
+            st.caption(f"Доступно в вашей системе: **{total_cpu_cores} ядер**.")
+
+        with col_hw2:
+            new_ram = st.slider(
+                "Лимит оперативной памяти для программы (RAM Limit MB):",
+                min_value=512,
+                max_value=16384,
+                value=int(admin_cfg.get("ram_limit_mb", 2048)),
+                step=256,
+                help="Максимальный порог памяти. При превышении автоматически запускается агрессивная сборка мусора (Garbage Collector)."
+            )
+            st.caption(f"Текущая системная память: **{ram_used_gb:.1f} ГБ занято** из **{ram_total_gb:.1f} ГБ**.")
+
+        col_opt1, col_opt2 = st.columns(2)
+        with col_opt1:
+            new_chunk_size = st.select_slider(
+                "Размер пачки для пакетной обработки (Batch Chunk Size):",
+                options=[16, 32, 64, 128, 256, 512],
+                value=int(admin_cfg.get("batch_chunk_size", 64)),
+                help="Определяет размер порции тикетов, единовременно обрабатываемых в оперативной памяти."
+            )
+        with col_opt2:
+            new_agg_gc = st.checkbox(
+                "Агрессивная сборка мусора (Aggressive GC)",
+                value=bool(admin_cfg.get("aggressive_gc", False)),
+                help="Принудительно освобождает неиспользуемую память Python после каждого батча. Рекомендуется для слабых серверов (RAM <= 2 ГБ)."
+            )
+
+        st.markdown("---")
+        st.markdown("### 3. 🛡️ Пороги доверия классификатора")
         new_conf = st.slider(
             "Минимальный порог уверенности модели (Confidence Threshold):",
             min_value=0.30,
@@ -382,7 +526,7 @@ with tab_config:
             help="Если уверенность CatBoost ниже этого значения, тикет гарантированно передается оператору.",
         )
 
-        st.markdown("#### 2. Матрица безусловной эскалации человека (Needs Human Always)")
+        st.markdown("### 4. 👥 Матрица безусловной эскалации человека (Needs Human Always)")
         all_categories = [
             "report.account",
             "report.payment",
@@ -406,14 +550,14 @@ with tab_config:
             help="Тикеты указанных категорий никогда не закрываются автоматически.",
         )
 
-        st.markdown("#### 3. Политика работы с доказательствами")
+        st.markdown("### 5. 📷 Политика работы с доказательствами")
         new_ev_human = st.checkbox(
             "Принудительно требовать модератора при наличии доказательств (has_evidence=True / images_count > 0)",
             value=admin_cfg.get("evidence_requires_human", True),
             help="ИИ не может гарантированно верифицировать подлинность скриншотов и видео, поэтому жалоба передается человеку.",
         )
 
-        st.markdown("#### 4. Защита от спама и флуда (Deduplication)")
+        st.markdown("### 6. 🚫 Защита от спама и флуда (Deduplication)")
         c_spam1, c_spam2 = st.columns(2)
         with c_spam1:
             new_max_tickets = st.number_input(
@@ -431,15 +575,22 @@ with tab_config:
                 step=0.01,
             )
 
-        submit_config = st.form_submit_button("💾 Сохранить и применить настройки", type="primary")
+        submit_config = st.form_submit_button("💾 Сохранить и применить все настройки", type="primary")
         if submit_config:
+            admin_cfg["operating_mode"] = new_mode
+            admin_cfg["cpu_threads"] = new_threads
+            admin_cfg["ram_limit_mb"] = new_ram
+            admin_cfg["batch_chunk_size"] = new_chunk_size
+            admin_cfg["aggressive_gc"] = new_agg_gc
             admin_cfg["confidence_threshold"] = new_conf
             admin_cfg["human_required_categories"] = new_human_cats
             admin_cfg["evidence_requires_human"] = new_ev_human
             admin_cfg["max_tickets_per_hour"] = new_max_tickets
             admin_cfg["dedup_similarity_threshold"] = new_sim_thresh
             save_admin_config(admin_cfg)
-            st.success("Настройки успешно сохранены в data/admin_config.json и применены в рантайме!")
+            if hasattr(classifier, "set_thread_count"):
+                classifier.set_thread_count(new_threads)
+            st.success("Настройки успешно сохранены в data/admin_config.json и мгновенно применены в рантайме!")
             st.rerun()
 
 # ==============================================================================

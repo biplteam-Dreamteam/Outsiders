@@ -195,12 +195,31 @@ class TicketClassifier:
         cbm_path: str | None = None,
         prio_path: str | None = None,
         meta_path: str | None = None,
+        thread_count: int | None = None,
     ):
         self.cbm_path = cbm_path or (
             CAT_MODEL_PATH if os.path.exists(CAT_MODEL_PATH) else CBM_MODEL_PATH
         )
         self.prio_path = prio_path or PRIO_MODEL_PATH
         self.meta_path = meta_path or META_PATH
+        self.thread_count = thread_count
+        if self.thread_count is None:
+            cfg_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "admin_config.json")
+            if os.path.exists(cfg_path):
+                try:
+                    import json
+                    with open(cfg_path, "r", encoding="utf-8") as f:
+                        cfg = json.load(f)
+                    self.thread_count = cfg.get("cpu_threads")
+                except Exception:
+                    pass
+        if self.thread_count is not None:
+            try:
+                os.environ["OMP_NUM_THREADS"] = str(self.thread_count)
+                os.environ["MKL_NUM_THREADS"] = str(self.thread_count)
+            except Exception:
+                pass
+
         self.catboost_model = None
         self.prio_model = None
         self.meta = None
@@ -208,6 +227,14 @@ class TicketClassifier:
         self.lr_vectorizer = None
         self.lr_classes = None
         self._load()
+
+    def set_thread_count(self, threads: int) -> None:
+        self.thread_count = max(1, int(threads))
+        try:
+            os.environ["OMP_NUM_THREADS"] = str(self.thread_count)
+            os.environ["MKL_NUM_THREADS"] = str(self.thread_count)
+        except Exception:
+            pass
 
     def _load(self):
         if os.path.exists(self.cbm_path) and os.path.exists(self.meta_path):
@@ -313,7 +340,10 @@ class TicketClassifier:
                 )
                 X_feat = sparse.hstack([vec, meta_arr]).tocsr()
 
-                probs = self.catboost_model.predict_proba(X_feat)[0]
+                if self.thread_count:
+                    probs = self.catboost_model.predict_proba(X_feat, thread_count=self.thread_count)[0]
+                else:
+                    probs = self.catboost_model.predict_proba(X_feat)[0]
                 best_idx = int(probs.argmax())
                 confidence = float(probs[best_idx])
                 id2cat = self.meta.get("id2cat") or self.meta.get("id_to_class")

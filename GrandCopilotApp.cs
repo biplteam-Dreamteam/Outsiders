@@ -27,15 +27,29 @@ namespace GrandCopilot
         private RichTextBox _rtbLiveResult;
         private Button _btnTestLive;
 
+        // Settings Controls
+        private RadioButton _rbModeFull;
+        private RadioButton _rbModeTriage;
+        private RadioButton _rbModeCopilot;
+        private NumericUpDown _numCpuThreads;
+        private NumericUpDown _numRamLimit;
+        private NumericUpDown _numBatchChunk;
+        private CheckBox _chkAggGc;
+        private NumericUpDown _numConfidence;
+        private CheckBox _chkEvidenceHuman;
+        private NumericUpDown _numMaxPerHour;
+        private Label _lblSettingsSaved;
+
         public MainForm()
         {
             InitializeComponent();
+            LoadConfigToUI();
         }
 
         private void InitializeComponent()
         {
-            this.Text = "Grand Mobile Support Copilot — Enterprise Control Center v2.4";
-            this.Size = new Size(960, 680);
+            this.Text = "Grand Mobile Support Copilot — Enterprise Control Center v2.5";
+            this.Size = new Size(1000, 720);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.BackColor = Color.FromArgb(15, 23, 42); // slate-900
             this.ForeColor = Color.FromArgb(241, 245, 249);
@@ -45,7 +59,7 @@ namespace GrandCopilot
             Panel pnlHeader = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 70,
+                Height = 72,
                 BackColor = Color.FromArgb(30, 41, 59) // slate-800
             };
             Label lblTitle = new Label
@@ -58,7 +72,7 @@ namespace GrandCopilot
             };
             Label lblSub = new Label
             {
-                Text = "Autonomous Enterprise AI Triage & Copilot Engine (Zero Token Cost, Sub-10ms Fast-Path)",
+                Text = "Enterprise AI Triage & Copilot Engine — Полное управление режимами и аппаратными ресурсами (CPU/RAM)",
                 Font = new Font("Segoe UI", 9.5f, FontStyle.Regular),
                 ForeColor = Color.FromArgb(148, 163, 184), // slate-400
                 Location = new Point(22, 40),
@@ -81,19 +95,25 @@ namespace GrandCopilot
             BuildDashboardTab(tabDashboard);
             tabs.TabPages.Add(tabDashboard);
 
-            // TAB 2: Batch Predictor
+            // TAB 2: Hardware Tuning & Modes
+            TabPage tabSettings = new TabPage("🎛️ Режимы и Ресурсы (Tuning)");
+            tabSettings.BackColor = Color.FromArgb(15, 23, 42);
+            BuildSettingsTab(tabSettings);
+            tabs.TabPages.Add(tabSettings);
+
+            // TAB 3: Batch Predictor
             TabPage tabBatch = new TabPage("📦 Пакетная обработка (Batch Predict)");
             tabBatch.BackColor = Color.FromArgb(15, 23, 42);
             BuildBatchTab(tabBatch);
             tabs.TabPages.Add(tabBatch);
 
-            // TAB 3: Live Simulator
+            // TAB 4: Live Simulator
             TabPage tabLive = new TabPage("🧪 Тестирование тикета (Live Triage)");
             tabLive.BackColor = Color.FromArgb(15, 23, 42);
             BuildLiveTab(tabLive);
             tabs.TabPages.Add(tabLive);
 
-            // TAB 4: System Health
+            // TAB 5: System Health
             TabPage tabHealth = new TabPage("🛡️ Статус и База знаний");
             tabHealth.BackColor = Color.FromArgb(15, 23, 42);
             BuildHealthTab(tabHealth);
@@ -113,7 +133,7 @@ namespace GrandCopilot
                 Text = " Веб-панель оператора (Streamlit Dashboard) ",
                 ForeColor = Color.FromArgb(56, 189, 248),
                 Location = new Point(25, 20),
-                Size = new Size(880, 130),
+                Size = new Size(920, 130),
                 Font = new Font("Segoe UI", 10f, FontStyle.Bold)
             };
             _lblUiStatus = new Label
@@ -145,7 +165,7 @@ namespace GrandCopilot
                 Text = " Сетевой сервис (FastAPI REST API) ",
                 ForeColor = Color.FromArgb(56, 189, 248),
                 Location = new Point(25, 170),
-                Size = new Size(880, 130),
+                Size = new Size(920, 130),
                 Font = new Font("Segoe UI", 10f, FontStyle.Bold)
             };
             _lblApiStatus = new Label
@@ -175,12 +195,12 @@ namespace GrandCopilot
             Panel pnlInfo = new Panel
             {
                 Location = new Point(25, 320),
-                Size = new Size(880, 180),
+                Size = new Size(920, 200),
                 BackColor = Color.FromArgb(30, 41, 59)
             };
             Label lblInfoTitle = new Label
             {
-                Text = "Официальные показатели промышленного конвейера:",
+                Text = "Официальные показатели промышленного конвейера Grand Mobile:",
                 Font = new Font("Segoe UI", 11f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(248, 250, 252),
                 Location = new Point(20, 15),
@@ -188,11 +208,11 @@ namespace GrandCopilot
             };
             Label lblStats = new Label
             {
-                Text = "• Скорость Fast-Path (P50): 3.4 мс  |  P95: 8.8 мс\n" +
-                       "• Пропускная способность: до 214.9 тикетов в секунду на ядро\n" +
+                Text = "• Скорость Fast-Path (P50): 0.59 мс (Triage Only) | 3.4 мс (Full Mode)\n" +
+                       "• Пропускная способность: до 214.9 тикетов в секунду на ядро процессора\n" +
                        "• Галлюцинации правил: 0.00% (строгая валидация по 101 правилу rules.json)\n" +
-                       "• Автоматическое закрытие (needs_human=false): 17.3% (типовая помощь и навигация)\n" +
-                       "• Безусловная эскалация оператору (needs_human=true): 82.7% (финансы, взломы, читы, доказательства)\n" +
+                       "• Управление режимами: Полный автопилот, Только классификация (Triage Only), Ассистент оператора\n" +
+                       "• Аппаратный тюнинг: Конфигурируемое число ядер (1-" + Environment.ProcessorCount + "), лимит памяти и сборщик мусора\n" +
                        "• Стоимость API токенов: $0.0000 (100% On-Premise автономность)",
                 Font = new Font("Segoe UI", 10f, FontStyle.Regular),
                 ForeColor = Color.FromArgb(203, 213, 225),
@@ -204,6 +224,317 @@ namespace GrandCopilot
             page.Controls.Add(pnlInfo);
         }
 
+        private void BuildSettingsTab(TabPage page)
+        {
+            // Panel 1: Operating Mode
+            GroupBox grpMode = new GroupBox
+            {
+                Text = " 1. Режим работы модели (Ответы vs Классификация) ",
+                ForeColor = Color.FromArgb(56, 189, 248),
+                Location = new Point(25, 15),
+                Size = new Size(920, 140),
+                Font = new Font("Segoe UI", 10f, FontStyle.Bold)
+            };
+
+            _rbModeFull = new RadioButton
+            {
+                Text = "🟢 Полный автопилот — Классификация + Авто-ответы (Fast-Path) + Черновики (RAG по rules.json)",
+                Location = new Point(20, 28),
+                Size = new Size(880, 28),
+                ForeColor = Color.FromArgb(226, 232, 240),
+                Checked = true
+            };
+            _rbModeTriage = new RadioButton
+            {
+                Text = "⚡ Чистая классификация (Triage Only) — БЕЗ генерации текста ответов. Сверхбыстро (< 1 мс), 0 расход RAM.",
+                Location = new Point(20, 62),
+                Size = new Size(880, 28),
+                ForeColor = Color.FromArgb(226, 232, 240)
+            };
+            _rbModeCopilot = new RadioButton
+            {
+                Text = "🛡️ Ассистент модератора (Human-in-the-Loop) — Модель готовит черновики, но 100% тикетов идут человеку.",
+                Location = new Point(20, 96),
+                Size = new Size(880, 28),
+                ForeColor = Color.FromArgb(226, 232, 240)
+            };
+
+            grpMode.Controls.Add(_rbModeFull);
+            grpMode.Controls.Add(_rbModeTriage);
+            grpMode.Controls.Add(_rbModeCopilot);
+            page.Controls.Add(grpMode);
+
+            // Panel 2: Hardware Tuning
+            GroupBox grpHw = new GroupBox
+            {
+                Text = " 2. Выделение аппаратных ресурсов (CPU Cores & RAM Limit) ",
+                ForeColor = Color.FromArgb(56, 189, 248),
+                Location = new Point(25, 165),
+                Size = new Size(920, 150),
+                Font = new Font("Segoe UI", 10f, FontStyle.Bold)
+            };
+
+            int maxCores = Environment.ProcessorCount;
+            Label lblCores = new Label
+            {
+                Text = "Выделено ядер процессора (CPU Threads, 1-" + maxCores + "):",
+                Location = new Point(20, 32),
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9.5f, FontStyle.Regular),
+                ForeColor = Color.FromArgb(203, 213, 225)
+            };
+            _numCpuThreads = new NumericUpDown
+            {
+                Minimum = 1,
+                Maximum = maxCores,
+                Value = Math.Min(8, maxCores),
+                Location = new Point(340, 30),
+                Size = new Size(90, 28),
+                BackColor = Color.FromArgb(30, 41, 59),
+                ForeColor = Color.White
+            };
+
+            Label lblRam = new Label
+            {
+                Text = "Лимит оперативной памяти (RAM Limit MB):",
+                Location = new Point(480, 32),
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9.5f, FontStyle.Regular),
+                ForeColor = Color.FromArgb(203, 213, 225)
+            };
+            _numRamLimit = new NumericUpDown
+            {
+                Minimum = 512,
+                Maximum = 16384,
+                Increment = 256,
+                Value = 2048,
+                Location = new Point(800, 30),
+                Size = new Size(100, 28),
+                BackColor = Color.FromArgb(30, 41, 59),
+                ForeColor = Color.White
+            };
+
+            Label lblBatch = new Label
+            {
+                Text = "Размер порции пакета (Batch Chunk Size):",
+                Location = new Point(20, 75),
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9.5f, FontStyle.Regular),
+                ForeColor = Color.FromArgb(203, 213, 225)
+            };
+            _numBatchChunk = new NumericUpDown
+            {
+                Minimum = 16,
+                Maximum = 512,
+                Increment = 16,
+                Value = 64,
+                Location = new Point(340, 72),
+                Size = new Size(90, 28),
+                BackColor = Color.FromArgb(30, 41, 59),
+                ForeColor = Color.White
+            };
+
+            _chkAggGc = new CheckBox
+            {
+                Text = "Агрессивная сборка мусора (Aggressive GC) для экономии RAM",
+                Location = new Point(480, 75),
+                Size = new Size(420, 26),
+                Font = new Font("Segoe UI", 9.5f, FontStyle.Regular),
+                ForeColor = Color.FromArgb(203, 213, 225)
+            };
+
+            Label lblHwNote = new Label
+            {
+                Text = "Примечание: CatBoost и инференс автоматически масштабируются на указанное число ядер.",
+                Location = new Point(20, 115),
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9f, FontStyle.Italic),
+                ForeColor = Color.FromArgb(148, 163, 184)
+            };
+
+            grpHw.Controls.Add(lblCores);
+            grpHw.Controls.Add(_numCpuThreads);
+            grpHw.Controls.Add(lblRam);
+            grpHw.Controls.Add(_numRamLimit);
+            grpHw.Controls.Add(lblBatch);
+            grpHw.Controls.Add(_numBatchChunk);
+            grpHw.Controls.Add(_chkAggGc);
+            grpHw.Controls.Add(lblHwNote);
+            page.Controls.Add(grpHw);
+
+            // Panel 3: Guardrails
+            GroupBox grpGuard = new GroupBox
+            {
+                Text = " 3. Политики безопасности (Guardrails & Human-in-the-Loop) ",
+                ForeColor = Color.FromArgb(56, 189, 248),
+                Location = new Point(25, 325),
+                Size = new Size(920, 115),
+                Font = new Font("Segoe UI", 10f, FontStyle.Bold)
+            };
+
+            Label lblConf = new Label
+            {
+                Text = "Порог уверенности классификатора (0.30 - 0.95):",
+                Location = new Point(20, 30),
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9.5f, FontStyle.Regular),
+                ForeColor = Color.FromArgb(203, 213, 225)
+            };
+            _numConfidence = new NumericUpDown
+            {
+                Minimum = 30,
+                Maximum = 95,
+                Value = 55,
+                Location = new Point(340, 28),
+                Size = new Size(90, 28),
+                BackColor = Color.FromArgb(30, 41, 59),
+                ForeColor = Color.White
+            };
+
+            _chkEvidenceHuman = new CheckBox
+            {
+                Text = "Принудительно требовать человека при наличии доказательств (has_evidence=True)",
+                Location = new Point(20, 70),
+                Size = new Size(620, 26),
+                Font = new Font("Segoe UI", 9.5f, FontStyle.Regular),
+                ForeColor = Color.FromArgb(203, 213, 225),
+                Checked = true
+            };
+
+            Label lblSpam = new Label
+            {
+                Text = "Макс. тикетов/час от игрока:",
+                Location = new Point(480, 30),
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9.5f, FontStyle.Regular),
+                ForeColor = Color.FromArgb(203, 213, 225)
+            };
+            _numMaxPerHour = new NumericUpDown
+            {
+                Minimum = 1,
+                Maximum = 30,
+                Value = 5,
+                Location = new Point(800, 28),
+                Size = new Size(100, 28),
+                BackColor = Color.FromArgb(30, 41, 59),
+                ForeColor = Color.White
+            };
+
+            grpGuard.Controls.Add(lblConf);
+            grpGuard.Controls.Add(_numConfidence);
+            grpGuard.Controls.Add(lblSpam);
+            grpGuard.Controls.Add(_numMaxPerHour);
+            grpGuard.Controls.Add(_chkEvidenceHuman);
+            page.Controls.Add(grpGuard);
+
+            // Save Button & Status
+            Button btnSave = CreateButton("💾 Сохранить и применить все настройки", 25, 455, 380, 42, Color.FromArgb(16, 185, 129));
+            btnSave.Font = new Font("Segoe UI", 10.5f, FontStyle.Bold);
+            btnSave.Click += (s, e) => SaveConfigFromUI();
+
+            _lblSettingsSaved = new Label
+            {
+                Text = "",
+                Location = new Point(420, 465),
+                AutoSize = true,
+                Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+                ForeColor = Color.FromArgb(52, 211, 153)
+            };
+
+            page.Controls.Add(btnSave);
+            page.Controls.Add(_lblSettingsSaved);
+        }
+
+        private void LoadConfigToUI()
+        {
+            string cfgPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "admin_config.json");
+            if (!File.Exists(cfgPath)) return;
+
+            try
+            {
+                string text = File.ReadAllText(cfgPath, Encoding.UTF8);
+                if (text.Contains("\"operating_mode\": \"triage_only\""))
+                    _rbModeTriage.Checked = true;
+                else if (text.Contains("\"operating_mode\": \"copilot_only\""))
+                    _rbModeCopilot.Checked = true;
+                else
+                    _rbModeFull.Checked = true;
+
+                // CPU Threads
+                int threads = ExtractIntFromJson(text, "cpu_threads", Math.Min(8, Environment.ProcessorCount));
+                if (threads >= 1 && threads <= Environment.ProcessorCount) _numCpuThreads.Value = threads;
+
+                // RAM Limit
+                int ram = ExtractIntFromJson(text, "ram_limit_mb", 2048);
+                if (ram >= 512 && ram <= 16384) _numRamLimit.Value = ram;
+
+                // Batch chunk
+                int chunk = ExtractIntFromJson(text, "batch_chunk_size", 64);
+                if (chunk >= 16 && chunk <= 512) _numBatchChunk.Value = chunk;
+
+                // Aggressive GC
+                _chkAggGc.Checked = text.Contains("\"aggressive_gc\": true");
+
+                // Evidence human
+                _chkEvidenceHuman.Checked = text.Contains("\"evidence_requires_human\": true");
+            }
+            catch { }
+        }
+
+        private void SaveConfigFromUI()
+        {
+            string mode = "full";
+            if (_rbModeTriage.Checked) mode = "triage_only";
+            else if (_rbModeCopilot.Checked) mode = "copilot_only";
+
+            int threads = (int)_numCpuThreads.Value;
+            int ram = (int)_numRamLimit.Value;
+            int chunk = (int)_numBatchChunk.Value;
+            bool aggGc = _chkAggGc.Checked;
+            double conf = ((double)_numConfidence.Value) / 100.0;
+            bool evHuman = _chkEvidenceHuman.Checked;
+            int maxPerHour = (int)_numMaxPerHour.Value;
+
+            string json = "{\n" +
+                "  \"operating_mode\": \"" + mode + "\",\n" +
+                "  \"cpu_threads\": " + threads + ",\n" +
+                "  \"ram_limit_mb\": " + ram + ",\n" +
+                "  \"batch_chunk_size\": " + chunk + ",\n" +
+                "  \"aggressive_gc\": " + (aggGc ? "true" : "false") + ",\n" +
+                "  \"confidence_threshold\": " + conf.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + ",\n" +
+                "  \"human_required_categories\": [\n" +
+                "    \"report.account\",\n" +
+                "    \"report.payment\",\n" +
+                "    \"complaint.admin\",\n" +
+                "    \"complaint.cheat\"\n" +
+                "  ],\n" +
+                "  \"evidence_requires_human\": " + (evHuman ? "true" : "false") + ",\n" +
+                "  \"max_tickets_per_hour\": " + maxPerHour + ",\n" +
+                "  \"dedup_similarity_threshold\": 0.85,\n" +
+                "  \"active_model\": \"CatBoost CBM (Fast-Path)\"\n" +
+                "}";
+
+            string cfgDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data");
+            Directory.CreateDirectory(cfgDir);
+            File.WriteAllText(Path.Combine(cfgDir, "admin_config.json"), json, Encoding.UTF8);
+
+            _lblSettingsSaved.Text = "✅ Настройки сохранены и применены! (Режим: " + mode + ", " + threads + " ядер, " + ram + " МБ RAM)";
+        }
+
+        private int ExtractIntFromJson(string json, string key, int defaultVal)
+        {
+            string search = "\"" + key + "\":";
+            int idx = json.IndexOf(search);
+            if (idx == -1) return defaultVal;
+            int start = idx + search.Length;
+            int end = json.IndexOfAny(new char[] { ',', '}', '\n', '\r' }, start);
+            if (end == -1) end = json.Length;
+            string valStr = json.Substring(start, end - start).Trim();
+            int parsed;
+            if (int.TryParse(valStr, out parsed)) return parsed;
+            return defaultVal;
+        }
+
         private void BuildBatchTab(TabPage page)
         {
             Label lblIn = new Label { Text = "Входной файл (JSONL / JSON / GZ):", Location = new Point(25, 20), AutoSize = true };
@@ -211,11 +542,11 @@ namespace GrandCopilot
             {
                 Text = "tickets_valid.jsonl",
                 Location = new Point(25, 45),
-                Size = new Size(680, 28),
+                Size = new Size(720, 28),
                 BackColor = Color.FromArgb(30, 41, 59),
                 ForeColor = Color.White
             };
-            Button btnBrowseIn = CreateButton("Обзор...", 720, 43, 100, 32, Color.FromArgb(71, 85, 105));
+            Button btnBrowseIn = CreateButton("Обзор...", 760, 43, 100, 32, Color.FromArgb(71, 85, 105));
             btnBrowseIn.Click += (s, e) =>
             {
                 OpenFileDialog dlg = new OpenFileDialog { Filter = "Ticket files (*.jsonl;*.json;*.gz)|*.jsonl;*.json;*.gz|All files (*.*)|*.*" };
@@ -227,7 +558,7 @@ namespace GrandCopilot
             {
                 Text = "pred.jsonl",
                 Location = new Point(25, 115),
-                Size = new Size(680, 28),
+                Size = new Size(720, 28),
                 BackColor = Color.FromArgb(30, 41, 59),
                 ForeColor = Color.White
             };
@@ -244,7 +575,7 @@ namespace GrandCopilot
             _rtbBatchLogs = new RichTextBox
             {
                 Location = new Point(25, 240),
-                Size = new Size(880, 300),
+                Size = new Size(920, 300),
                 BackColor = Color.FromArgb(10, 15, 28),
                 ForeColor = Color.FromArgb(52, 211, 153),
                 Font = new Font("Consolas", 9.5f, FontStyle.Regular),
@@ -269,7 +600,7 @@ namespace GrandCopilot
             {
                 Text = "Arman_Petrov оскорблял меня и мою семью в чате у больницы, потом заДМил без причины, фрапс с /time прикрепил, пункт 2.1 ОП",
                 Location = new Point(25, 40),
-                Size = new Size(880, 60),
+                Size = new Size(920, 60),
                 Multiline = true,
                 BackColor = Color.FromArgb(30, 41, 59),
                 ForeColor = Color.White
@@ -304,7 +635,7 @@ namespace GrandCopilot
             _rtbLiveResult = new RichTextBox
             {
                 Location = new Point(25, 205),
-                Size = new Size(880, 335),
+                Size = new Size(920, 335),
                 BackColor = Color.FromArgb(10, 15, 28),
                 ForeColor = Color.FromArgb(56, 189, 248),
                 Font = new Font("Consolas", 10f, FontStyle.Regular),
@@ -327,7 +658,7 @@ namespace GrandCopilot
             ListView lv = new ListView
             {
                 Location = new Point(25, 25),
-                Size = new Size(880, 360),
+                Size = new Size(920, 360),
                 View = View.Details,
                 FullRowSelect = true,
                 BackColor = Color.FromArgb(30, 41, 59),
@@ -336,13 +667,13 @@ namespace GrandCopilot
             };
             lv.Columns.Add("Компонент системы", 240);
             lv.Columns.Add("Статус", 140);
-            lv.Columns.Add("Детализация", 480);
+            lv.Columns.Add("Детализация", 520);
 
             AddHealthItem(lv, "CatBoost Модель Категорий", File.Exists("models/category_model.cbm") ? "АКТИВНА" : "НЕ НАЙДЕНА", "3.3 MB бинарные деревья CBM (14 категорий)");
             AddHealthItem(lv, "CatBoost Модель Приоритетов", File.Exists("models/priority_model.cbm") ? "АКТИВНА" : "НЕ НАЙДЕНА", "0.9 MB бинарные деревья CBM (p0 - p3)");
             AddHealthItem(lv, "База знаний rules.json", File.Exists("rules.json") ? "АКТИВНА" : "НЕ НАЙДЕНА", "101 утвержденное правило в 11 разделах");
             AddHealthItem(lv, "Таксономия taxonomy.json", File.Exists("taxonomy.json") ? "АКТИВНА" : "НЕ НАЙДЕНА", "14 классов поддержки Grand Mobile");
-            AddHealthItem(lv, "C++ Ядро L1 CP1251", "АКТИВНО", "Таблица замен alignas(64) в L1-кэше (0.5 нс)");
+            AddHealthItem(lv, "Конфигурация admin_config.json", File.Exists("data/admin_config.json") ? "АКТИВНА" : "ДЕФОЛТ", "Режимы Full/Triage, потоки CPU, память RAM");
             AddHealthItem(lv, "Python Среда", "ГОТОВА", "Python 3.10+ с orjson, catboost, fastapi, streamlit");
 
             page.Controls.Add(lv);
@@ -440,14 +771,24 @@ namespace GrandCopilot
             string inFile = _txtBatchInput.Text.Trim();
             string outFile = _txtBatchOutput.Text.Trim();
             _rtbBatchLogs.Clear();
-            _rtbBatchLogs.AppendText("Запуск пакетного инференса: python predict.py --in " + inFile + " --out " + outFile + "\n\n");
+
+            string mode = "full";
+            if (_rbModeTriage.Checked) mode = "triage_only";
+            else if (_rbModeCopilot.Checked) mode = "copilot_only";
+
+            int threads = (int)_numCpuThreads.Value;
+            int batchSize = (int)_numBatchChunk.Value;
+            int ram = (int)_numRamLimit.Value;
+
+            string args = "predict.py --in \"" + inFile + "\" --out \"" + outFile + "\" --mode " + mode + " --threads " + threads + " --batch-size " + batchSize + " --ram-limit " + ram;
+            _rtbBatchLogs.AppendText("Запуск пакетного инференса: python " + args + "\n\n");
 
             _btnRunBatch.Enabled = false;
 
             ProcessStartInfo psi = new ProcessStartInfo
             {
                 FileName = "python",
-                Arguments = "predict.py --in \"" + inFile + "\" --out \"" + outFile + "\"",
+                Arguments = args,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -514,7 +855,7 @@ namespace GrandCopilot
                 "from src.pipeline import SupportCopilotPipeline;\n" +
                 "pipe = SupportCopilotPipeline();\n" +
                 "ticket = {'ticket_id': 'live_test', 'messages': [{'role': 'player', 'text': '" + text + "'}], 'reported_nick': '" + nick + "', 'images_count': " + imgs + "};\n" +
-                "res = pipe.triage_ticket(ticket);\n" +
+                "res = pipe.triage_ticket_sync(ticket);\n" +
                 "print(orjson.dumps(res, option=orjson.OPT_INDENT_2).decode('utf-8'))";
 
             ProcessStartInfo psi = new ProcessStartInfo

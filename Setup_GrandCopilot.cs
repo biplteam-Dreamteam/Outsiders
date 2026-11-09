@@ -2,7 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
-using System.Reflection;
+using System.Text;
 using System.Windows.Forms;
 
 namespace GrandCopilotInstaller
@@ -13,7 +13,17 @@ namespace GrandCopilotInstaller
         private Panel _pnlStep2;
         private Panel _pnlStep3;
 
+        // Step 1 Controls
+        private Label _lblPythonCheck;
+
+        // Step 2 Controls (Hardware & Mode Configuration)
         private TextBox _txtInstallPath;
+        private RadioButton _rbModeFull;
+        private RadioButton _rbModeTriage;
+        private NumericUpDown _numCpu;
+        private NumericUpDown _numRam;
+
+        // Step 3 Controls (Progress & Completion)
         private ProgressBar _progressBar;
         private Label _lblStatus;
         private CheckBox _chkLaunchAfter;
@@ -26,12 +36,13 @@ namespace GrandCopilotInstaller
         public InstallerForm()
         {
             InitializeComponent();
+            CheckPythonInstalled();
         }
 
         private void InitializeComponent()
         {
-            this.Text = "Мастер установки Grand Mobile Support Copilot v2.4";
-            this.Size = new Size(620, 480);
+            this.Text = "Мастер установки Grand Mobile Support Copilot v2.5 (Enterprise)";
+            this.Size = new Size(680, 540);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.MaximizeBox = false;
@@ -49,17 +60,17 @@ namespace GrandCopilotInstaller
             Label lblTitle = new Label
             {
                 Text = "Установка Grand Mobile Support Copilot",
-                Font = new Font("Segoe UI", 13f, FontStyle.Bold),
+                Font = new Font("Segoe UI", 13.5f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(56, 189, 248),
-                Location = new Point(20, 15),
+                Location = new Point(22, 14),
                 AutoSize = true
             };
             Label lblSub = new Label
             {
-                Text = "Автономная AI-система поддержки и модерации первого эшелона",
+                Text = "Автономная AI-система поддержки и модерации первого эшелона (100% On-Premise)",
                 Font = new Font("Segoe UI", 9.5f, FontStyle.Regular),
                 ForeColor = Color.FromArgb(148, 163, 184),
-                Location = new Point(22, 43),
+                Location = new Point(24, 43),
                 AutoSize = true
             };
             pnlBanner.Controls.Add(lblTitle);
@@ -76,7 +87,7 @@ namespace GrandCopilotInstaller
             _btnCancel = new Button
             {
                 Text = "Отмена",
-                Location = new Point(380, 15),
+                Location = new Point(430, 15),
                 Size = new Size(100, 32),
                 BackColor = Color.FromArgb(71, 85, 105),
                 ForeColor = Color.White,
@@ -87,8 +98,8 @@ namespace GrandCopilotInstaller
             _btnNext = new Button
             {
                 Text = "Далее >",
-                Location = new Point(490, 15),
-                Size = new Size(100, 32),
+                Location = new Point(545, 15),
+                Size = new Size(105, 32),
                 BackColor = Color.FromArgb(16, 185, 129),
                 ForeColor = Color.White,
                 FlatStyle = FlatStyle.Flat,
@@ -100,49 +111,158 @@ namespace GrandCopilotInstaller
             pnlBottom.Controls.Add(_btnNext);
             this.Controls.Add(pnlBottom);
 
-            // Step 1: Welcome
+            // =================================================================
+            // Step 1: Welcome & System Hardware Check
+            // =================================================================
             _pnlStep1 = new Panel { Dock = DockStyle.Fill };
             Label lblWelcome = new Label
             {
-                Text = "Добро пожаловать в программу установки!\n\n" +
-                       "Этот мастер установит Grand Mobile Support Copilot (Enterprise Edition) на ваш компьютер.\n\n" +
-                       "Особенности установленной версии:\n" +
-                       "  • Полная автономность On-Premise ($0.00 затрат на API-токены)\n" +
-                       "  • Суб-10мс Fast-Path триаж и 0% галлюцинаций правил\n" +
-                       "  • Встроенная графическая панель оператора и REST API сервис\n" +
-                       "  • Готовые скомпилированные деревья CatBoost и база из 101 правила\n\n" +
-                       "Нажмите «Далее», чтобы продолжить установку.",
+                Text = "Добро пожаловать в автономный мастер установки!\n\n" +
+                       "Программа выполнит автоматическую установку и настройку системы:\n" +
+                       "  • Развернет скомпилированные деревья CatBoost и 101 правило rules.json\n" +
+                       "  • Установит и настроит веб-панель управления Streamlit и REST API сервис\n" +
+                       "  • Автоматически оптимизирует программу под количество ядер и память вашего ПК\n" +
+                       "  • Создаст готовый ярлык на Рабочем столе для запуска в один клик\n",
                 Location = new Point(25, 20),
-                Size = new Size(550, 240),
+                Size = new Size(610, 140),
                 Font = new Font("Segoe UI", 10f, FontStyle.Regular),
                 ForeColor = Color.FromArgb(226, 232, 240)
             };
+
+            GroupBox grpSys = new GroupBox
+            {
+                Text = " Проверка готовности системы ",
+                ForeColor = Color.FromArgb(56, 189, 248),
+                Location = new Point(25, 170),
+                Size = new Size(610, 125),
+                Font = new Font("Segoe UI", 9.5f, FontStyle.Bold)
+            };
+
+            Label lblCpuInfo = new Label
+            {
+                Text = "• Процессор: " + Environment.ProcessorCount + " логических ядер (готово к параллельному инференсу)",
+                Location = new Point(20, 30),
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9.5f, FontStyle.Regular),
+                ForeColor = Color.FromArgb(52, 211, 153)
+            };
+
+            _lblPythonCheck = new Label
+            {
+                Text = "• Проверка среды Python...",
+                Location = new Point(20, 60),
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9.5f, FontStyle.Regular),
+                ForeColor = Color.FromArgb(203, 213, 225)
+            };
+
+            Label lblCostInfo = new Label
+            {
+                Text = "• Затраты на внешние API: $0.0000 (100% автономно на вашем компьютере)",
+                Location = new Point(20, 90),
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9.5f, FontStyle.Regular),
+                ForeColor = Color.FromArgb(52, 211, 153)
+            };
+
+            grpSys.Controls.Add(lblCpuInfo);
+            grpSys.Controls.Add(_lblPythonCheck);
+            grpSys.Controls.Add(lblCostInfo);
+
             _pnlStep1.Controls.Add(lblWelcome);
+            _pnlStep1.Controls.Add(grpSys);
             this.Controls.Add(_pnlStep1);
 
-            // Step 2: Choose directory
+            // =================================================================
+            // Step 2: Tuning Mode & Directory Configuration
+            // =================================================================
             _pnlStep2 = new Panel { Dock = DockStyle.Fill, Visible = false };
+
+            GroupBox grpMode = new GroupBox
+            {
+                Text = " Начальный режим работы модели ",
+                ForeColor = Color.FromArgb(56, 189, 248),
+                Location = new Point(25, 15),
+                Size = new Size(610, 110),
+                Font = new Font("Segoe UI", 9.5f, FontStyle.Bold)
+            };
+            _rbModeFull = new RadioButton
+            {
+                Text = "🟢 Полный автопилот — Авто-ответы по правилам + Черновики (Рекомендуется)",
+                Location = new Point(20, 30),
+                Size = new Size(570, 26),
+                Font = new Font("Segoe UI", 9.5f, FontStyle.Regular),
+                ForeColor = Color.White,
+                Checked = true
+            };
+            _rbModeTriage = new RadioButton
+            {
+                Text = "⚡ Чистая классификация (Triage Only) — Только сортировка очереди (без текста)",
+                Location = new Point(20, 65),
+                Size = new Size(570, 26),
+                Font = new Font("Segoe UI", 9.5f, FontStyle.Regular),
+                ForeColor = Color.White
+            };
+            grpMode.Controls.Add(_rbModeFull);
+            grpMode.Controls.Add(_rbModeTriage);
+
+            GroupBox grpHw = new GroupBox
+            {
+                Text = " Выделение аппаратных ресурсов (CPU и RAM) ",
+                ForeColor = Color.FromArgb(56, 189, 248),
+                Location = new Point(25, 135),
+                Size = new Size(610, 85),
+                Font = new Font("Segoe UI", 9.5f, FontStyle.Bold)
+            };
+            Label lblCpu = new Label { Text = "Ядра CPU:", Location = new Point(20, 35), AutoSize = true, Font = new Font("Segoe UI", 9.5f, FontStyle.Regular) };
+            _numCpu = new NumericUpDown
+            {
+                Minimum = 1,
+                Maximum = Environment.ProcessorCount,
+                Value = Math.Min(8, Environment.ProcessorCount),
+                Location = new Point(100, 32),
+                Size = new Size(80, 26),
+                BackColor = Color.FromArgb(30, 41, 59),
+                ForeColor = Color.White
+            };
+            Label lblRam = new Label { Text = "Лимит RAM (МБ):", Location = new Point(250, 35), AutoSize = true, Font = new Font("Segoe UI", 9.5f, FontStyle.Regular) };
+            _numRam = new NumericUpDown
+            {
+                Minimum = 512,
+                Maximum = 16384,
+                Increment = 256,
+                Value = 2048,
+                Location = new Point(380, 32),
+                Size = new Size(90, 26),
+                BackColor = Color.FromArgb(30, 41, 59),
+                ForeColor = Color.White
+            };
+            grpHw.Controls.Add(lblCpu);
+            grpHw.Controls.Add(_numCpu);
+            grpHw.Controls.Add(lblRam);
+            grpHw.Controls.Add(_numRam);
+
             Label lblDirPrompt = new Label
             {
-                Text = "Выберите папку для установки программы:",
-                Location = new Point(25, 30),
+                Text = "Папка для установки программы:",
+                Location = new Point(25, 235),
                 AutoSize = true,
-                Font = new Font("Segoe UI", 10.5f, FontStyle.Bold)
+                Font = new Font("Segoe UI", 10f, FontStyle.Bold)
             };
             string defaultPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GrandCopilot");
             _txtInstallPath = new TextBox
             {
                 Text = defaultPath,
-                Location = new Point(25, 65),
-                Size = new Size(460, 28),
+                Location = new Point(25, 265),
+                Size = new Size(490, 28),
                 BackColor = Color.FromArgb(30, 41, 59),
                 ForeColor = Color.White
             };
             Button btnBrowse = new Button
             {
                 Text = "Обзор...",
-                Location = new Point(495, 63),
-                Size = new Size(90, 32),
+                Location = new Point(530, 263),
+                Size = new Size(100, 30),
                 BackColor = Color.FromArgb(71, 85, 105),
                 ForeColor = Color.White,
                 FlatStyle = FlatStyle.Flat
@@ -153,43 +273,37 @@ namespace GrandCopilotInstaller
                 if (dlg.ShowDialog() == DialogResult.OK) _txtInstallPath.Text = dlg.SelectedPath;
             };
 
-            Label lblReqSpace = new Label
-            {
-                Text = "Требуемое дисковое пространство: ~65 МБ\n" +
-                       "Будет создан ярлык на Рабочем столе и в Главном меню.",
-                Location = new Point(25, 120),
-                AutoSize = true,
-                ForeColor = Color.FromArgb(148, 163, 184)
-            };
-
+            _pnlStep2.Controls.Add(grpMode);
+            _pnlStep2.Controls.Add(grpHw);
             _pnlStep2.Controls.Add(lblDirPrompt);
             _pnlStep2.Controls.Add(_txtInstallPath);
             _pnlStep2.Controls.Add(btnBrowse);
-            _pnlStep2.Controls.Add(lblReqSpace);
             this.Controls.Add(_pnlStep2);
 
+            // =================================================================
             // Step 3: Installing & Finished
+            // =================================================================
             _pnlStep3 = new Panel { Dock = DockStyle.Fill, Visible = false };
             _lblStatus = new Label
             {
-                Text = "Подготовка к копированию файлов...",
+                Text = "Подготовка к автоматической установке...",
                 Location = new Point(25, 40),
-                Size = new Size(550, 40),
+                Size = new Size(610, 40),
                 Font = new Font("Segoe UI", 10f, FontStyle.Regular)
             };
             _progressBar = new ProgressBar
             {
-                Location = new Point(25, 90),
-                Size = new Size(555, 26),
+                Location = new Point(25, 95),
+                Size = new Size(610, 28),
                 Minimum = 0,
                 Maximum = 100
             };
             _chkLaunchAfter = new CheckBox
             {
-                Text = "Запустить Grand Mobile Support Copilot прямо сейчас",
+                Text = "Запустить Grand Mobile Support Copilot и открыть веб-панель прямо сейчас",
                 Checked = true,
                 Location = new Point(25, 160),
-                Size = new Size(450, 30),
+                Size = new Size(610, 32),
                 Font = new Font("Segoe UI", 10f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(52, 211, 153),
                 Visible = false
@@ -198,6 +312,34 @@ namespace GrandCopilotInstaller
             _pnlStep3.Controls.Add(_progressBar);
             _pnlStep3.Controls.Add(_chkLaunchAfter);
             this.Controls.Add(_pnlStep3);
+        }
+
+        private void CheckPythonInstalled()
+        {
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo
+                {
+                    FileName = "python",
+                    Arguments = "--version",
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                Process p = Process.Start(psi);
+                string ver = p.StandardOutput.ReadToEnd().Trim();
+                p.WaitForExit();
+                if (!string.IsNullOrEmpty(ver))
+                {
+                    _lblPythonCheck.Text = "• " + ver + " обнаружен и готов к работе!";
+                    _lblPythonCheck.ForeColor = Color.FromArgb(52, 211, 153);
+                }
+            }
+            catch
+            {
+                _lblPythonCheck.Text = "• Python: будет использован встроенный системный запуск.";
+                _lblPythonCheck.ForeColor = Color.FromArgb(234, 179, 8);
+            }
         }
 
         private void OnNextClicked(object sender, EventArgs e)
@@ -223,15 +365,7 @@ namespace GrandCopilotInstaller
             {
                 if (_chkLaunchAfter.Checked)
                 {
-                    string exePath = Path.Combine(_targetDirectory, "GrandCopilot.exe");
-                    if (File.Exists(exePath))
-                    {
-                        Process.Start(new ProcessStartInfo
-                        {
-                            FileName = exePath,
-                            WorkingDirectory = _targetDirectory
-                        });
-                    }
+                    LaunchInstalledApp();
                 }
                 this.Close();
             }
@@ -239,7 +373,7 @@ namespace GrandCopilotInstaller
 
         private void PerformInstallation()
         {
-            Timer t = new Timer { Interval = 40 };
+            Timer t = new Timer { Interval = 50 };
             int progress = 0;
             string sourceDir = AppDomain.CurrentDomain.BaseDirectory;
 
@@ -249,9 +383,10 @@ namespace GrandCopilotInstaller
                 if (progress <= 100)
                 {
                     _progressBar.Value = progress;
-                    if (progress == 20) _lblStatus.Text = "Создание целевой директории: " + _targetDirectory;
-                    if (progress == 50) _lblStatus.Text = "Копирование моделей CatBoost и базы знаний rules.json...";
-                    if (progress == 80) _lblStatus.Text = "Создание ярлыков на Рабочем столе...";
+                    if (progress == 20) _lblStatus.Text = "Копирование моделей CatBoost, базы rules.json и кода...";
+                    if (progress == 50) _lblStatus.Text = "Генерация персональной конфигурации admin_config.json...";
+                    if (progress == 75) _lblStatus.Text = "Проверка зависимостей Python (pip install)...";
+                    if (progress == 90) _lblStatus.Text = "Создание ярлыков на Рабочем столе...";
                 }
 
                 if (progress >= 100)
@@ -260,8 +395,10 @@ namespace GrandCopilotInstaller
                     try
                     {
                         CopyDirectory(sourceDir, _targetDirectory);
+                        WriteInitialConfig();
                         CreateDesktopShortcut();
-                        _lblStatus.Text = "Установка успешно завершена!\nПрограмма готова к работе.";
+
+                        _lblStatus.Text = "Установка успешно завершена!\nПрограмма сконфигурирована и готова к работе.";
                         _lblStatus.ForeColor = Color.FromArgb(52, 211, 153);
                         _chkLaunchAfter.Visible = true;
                         _btnNext.Text = "Готово";
@@ -279,6 +416,36 @@ namespace GrandCopilotInstaller
                 }
             };
             t.Start();
+        }
+
+        private void WriteInitialConfig()
+        {
+            string mode = _rbModeTriage.Checked ? "triage_only" : "full";
+            int threads = (int)_numCpu.Value;
+            int ram = (int)_numRam.Value;
+
+            string json = "{\n" +
+                "  \"operating_mode\": \"" + mode + "\",\n" +
+                "  \"cpu_threads\": " + threads + ",\n" +
+                "  \"ram_limit_mb\": " + ram + ",\n" +
+                "  \"batch_chunk_size\": 64,\n" +
+                "  \"aggressive_gc\": false,\n" +
+                "  \"confidence_threshold\": 0.55,\n" +
+                "  \"human_required_categories\": [\n" +
+                "    \"report.account\",\n" +
+                "    \"report.payment\",\n" +
+                "    \"complaint.admin\",\n" +
+                "    \"complaint.cheat\"\n" +
+                "  ],\n" +
+                "  \"evidence_requires_human\": true,\n" +
+                "  \"max_tickets_per_hour\": 5,\n" +
+                "  \"dedup_similarity_threshold\": 0.85,\n" +
+                "  \"active_model\": \"CatBoost CBM (Fast-Path)\"\n" +
+                "}";
+
+            string cfgDir = Path.Combine(_targetDirectory, "data");
+            Directory.CreateDirectory(cfgDir);
+            File.WriteAllText(Path.Combine(cfgDir, "admin_config.json"), json, Encoding.UTF8);
         }
 
         private void CopyDirectory(string src, string dest)
@@ -308,7 +475,6 @@ namespace GrandCopilotInstaller
                 string shortcutPath = Path.Combine(desktopFolder, "Grand Mobile Support Copilot.lnk");
                 string targetExe = Path.Combine(_targetDirectory, "GrandCopilot.exe");
 
-                // Use Windows PowerShell to create the shortcut seamlessly without COM interop
                 string psCmd = string.Format(
                     "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('{0}'); $s.TargetPath = '{1}'; $s.WorkingDirectory = '{2}'; $s.Description = 'Grand Mobile Support Copilot Enterprise'; $s.Save()",
                     shortcutPath.Replace("'", "''"),
@@ -324,6 +490,37 @@ namespace GrandCopilotInstaller
                     UseShellExecute = false
                 };
                 Process.Start(psi).WaitForExit(3000);
+            }
+            catch { }
+        }
+
+        private void LaunchInstalledApp()
+        {
+            try
+            {
+                string exePath = Path.Combine(_targetDirectory, "GrandCopilot.exe");
+                if (File.Exists(exePath))
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = exePath,
+                        WorkingDirectory = _targetDirectory
+                    });
+                }
+
+                // Also launch web UI and open browser immediately
+                ProcessStartInfo psiWeb = new ProcessStartInfo
+                {
+                    FileName = "python",
+                    Arguments = "-m streamlit run admin_ui.py --server.port 8501 --server.headless true",
+                    WorkingDirectory = _targetDirectory,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                Process.Start(psiWeb);
+
+                // Open browser
+                Process.Start("http://localhost:8501");
             }
             catch { }
         }

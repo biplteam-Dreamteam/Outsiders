@@ -1,3 +1,5 @@
+import json
+import os
 from typing import Any
 
 from src.classifier import TicketClassifier
@@ -7,7 +9,41 @@ from src.llm_client import LLMClient
 from src.preprocessor import detect_language, extract_facts, normalize_cp1251_kz
 from src.rag_engine import RAGEngine
 
-HUMAN_ALWAYS_CATEGORIES = {"report.account", "report.payment", "complaint.admin"}
+CONFIG_PATH_DEFAULT = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "admin_config.json"
+)
+
+DEFAULT_CONFIG: dict[str, Any] = {
+    "operating_mode": "full",  # "full" (auto/draft), "triage_only" (classification only), "copilot_only" (human review)
+    "cpu_threads": 8,
+    "ram_limit_mb": 2048,
+    "batch_chunk_size": 64,
+    "aggressive_gc": False,
+    "confidence_threshold": 0.55,
+    "human_required_categories": [
+        "report.account",
+        "report.payment",
+        "complaint.admin",
+        "complaint.cheat",
+    ],
+    "evidence_requires_human": True,
+    "max_tickets_per_hour": 5,
+    "dedup_similarity_threshold": 0.85,
+    "active_model": "CatBoost CBM (Fast-Path)",
+}
+
+
+def load_pipeline_config(config_path: str = CONFIG_PATH_DEFAULT) -> dict[str, Any]:
+    cfg = dict(DEFAULT_CONFIG)
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+                if isinstance(saved, dict):
+                    cfg.update(saved)
+        except Exception:
+            pass
+    return cfg
 
 
 class SupportCopilotPipeline:
@@ -18,17 +54,49 @@ class SupportCopilotPipeline:
     - Извлечение фактов (ник, правила, пруфы, сервер)
     - Анти-спам и дедупликация (окно 1 час)
     - Классификация категории и приоритета (ML < 2 мс)
-    - Guardrails безопасности
-    - RAG по rules.json
+    - Guardrails безопасности и управление режимами (Full vs Triage Only vs Copilot)
+    - Динамическое регулирование потоков процессора (CPU threads) и памяти
+    - RAG по rules.json (при operating_mode != 'triage_only')
     - Генерация черновика ответа с цитированием
     - Пост-санитайзинг от галлюцинаций правил
     """
 
-    def __init__(self, rules_path: str = "rules.json", model_path: str | None = None):
-        self.classifier = TicketClassifier(model_path)
+    def __init__(
+        self,
+        rules_path: str = "rules.json",
+        model_path: str | None = None,
+        config_path: str = CONFIG_PATH_DEFAULT,
+    ):
+        self.config_path = config_path
+        self.config = load_pipeline_config(config_path)
+        self.operating_mode = self.config.get("operating_mode", "full")
+        self.cpu_threads = int(self.config.get("cpu_threads", 8))
+        self.ram_limit_mb = int(self.config.get("ram_limit_mb", 2048))
+
+        self.classifier = TicketClassifier(model_path, thread_count=self.cpu_threads)
         self.rag = RAGEngine(rules_path)
         self.llm = LLMClient()
-        self.deduplicator = TicketDeduplicator()
+        sim_val = float(self.config.get("dedup_similarity_threshold", 0.85))
+        sim_pct = sim_val * 100.0 if sim_val <= 1.0 else sim_val
+        self.deduplicator = TicketDeduplicator(
+            max_tickets_per_hour=int(self.config.get("max_tickets_per_hour", 5)),
+            similarity_threshold=sim_pct,
+        )
+
+    def reload_config(self) -> None:
+        """Перезагружает конфигурацию из файла в рантайме без перезапуска процесса."""
+        self.config = load_pipeline_config(self.config_path)
+        self.operating_mode = self.config.get("operating_mode", "full")
+        self.cpu_threads = int(self.config.get("cpu_threads", 8))
+        self.ram_limit_mb = int(self.config.get("ram_limit_mb", 2048))
+        if hasattr(self.classifier, "set_thread_count"):
+            self.classifier.set_thread_count(self.cpu_threads)
+
+    def set_operating_mode(self, mode: str) -> None:
+        """Переключает режим работы: 'full', 'triage_only', 'copilot_only'."""
+        if mode in ("full", "triage_only", "copilot_only"):
+            self.operating_mode = mode
+            self.config["operating_mode"] = mode
 
     async def triage_ticket_async(self, ticket: dict[str, Any]) -> dict[str, Any]:
         """Асинхронная обработка одного тикета (с попыткой LLM)"""
@@ -73,15 +141,29 @@ class SupportCopilotPipeline:
         needs_human, reasons = check_guardrails(
             ticket, clean_text, category, extracted["has_evidence"]
         )
-        if cls_res.get("low_confidence_needs_human"):
+
+        conf_thresh = float(self.config.get("confidence_threshold", 0.55))
+        if confidence < conf_thresh:
             needs_human = True
-            reasons.append("Низкая уверенность классификатора (confidence < 0.55)")
+            reasons.append(f"Низкая уверенность классификатора ({confidence:.2f} < {conf_thresh:.2f})")
+
+        human_cats = set(
+            self.config.get(
+                "human_required_categories",
+                ["report.account", "report.payment", "complaint.admin", "complaint.cheat"],
+            )
+        )
+        if category in human_cats:
+            needs_human = True
+            reasons.append(f"Политика безопасности: категория '{category}' требует человека")
+
+        if self.config.get("evidence_requires_human", True) and extracted["has_evidence"]:
+            needs_human = True
+            reasons.append("Прикреплены доказательства (скриншот/видео): требует человека")
+
         if is_spam:
             needs_human = True
             reasons.append("Обнаружен спам или дубликат обращения")
-        if category in HUMAN_ALWAYS_CATEGORIES:
-            needs_human = True
-            reasons.append(f"Категория '{category}' требует обязательного ручного разбора администратором")
 
         # Strict Rule Hallucination Shield: Validate extracted rule_refs against rules.json
         valid_rules_set = self.rag.validator.get_valid_rules()
@@ -94,6 +176,32 @@ class SupportCopilotPipeline:
                 reasons.append(f"Указано несуществующее правило: {r}")
         extracted["rule_refs"] = valid_extracted_refs
 
+        # REQ 1: Operating Mode Handling
+        if self.operating_mode == "triage_only":
+            # Чистая классификация: генерация текста ответа отключена
+            draft_reply = {
+                "lang": lang if lang in ("ru", "kk", "uz", "en") else "ru",
+                "text": "",
+                "cited": [],
+            }
+            if needs_human and not reasons:
+                reasons.append("Обращение требует подтверждения администратора")
+            return {
+                "lang": lang,
+                "category": category,
+                "priority": priority,
+                "is_spam_or_duplicate": is_spam,
+                "extracted": extracted,
+                "draft_reply": draft_reply,
+                "needs_human": needs_human,
+                "confidence": confidence,
+                "reasons": sorted(list(set(reasons))),
+            }
+
+        if self.operating_mode == "copilot_only":
+            needs_human = True
+            reasons.append("Режим 'Ассистент модератора': требуется утверждение черновика оператором")
+
         # 7. RAG Engine
         rules = self.rag.retrieve(
             clean_text + " " + str(ticket.get("rule_refs_raw", "") or ""),
@@ -104,7 +212,6 @@ class SupportCopilotPipeline:
 
         # 8. Draft reply generation (LLM with instant Fallback)
         draft_lang = lang if lang in ("ru", "kk", "uz", "en") else "ru"
-        # Security Guardrail: For payment/donate queries, bypass LLM to prevent financial hallucinations
         is_payment_query = category == "report.payment" or any(
             k in clean_text.lower() for k in ("донат", "donate", "вип", "випка", "vip", "төлем", "to'lov")
         )
@@ -190,15 +297,29 @@ class SupportCopilotPipeline:
         needs_human, reasons = check_guardrails(
             ticket, clean_text, category, extracted["has_evidence"]
         )
-        if cls_res.get("low_confidence_needs_human"):
+
+        conf_thresh = float(self.config.get("confidence_threshold", 0.55))
+        if confidence < conf_thresh:
             needs_human = True
-            reasons.append("Низкая уверенность классификатора (confidence < 0.55)")
+            reasons.append(f"Низкая уверенность классификатора ({confidence:.2f} < {conf_thresh:.2f})")
+
+        human_cats = set(
+            self.config.get(
+                "human_required_categories",
+                ["report.account", "report.payment", "complaint.admin", "complaint.cheat"],
+            )
+        )
+        if category in human_cats:
+            needs_human = True
+            reasons.append(f"Политика безопасности: категория '{category}' требует человека")
+
+        if self.config.get("evidence_requires_human", True) and extracted["has_evidence"]:
+            needs_human = True
+            reasons.append("Прикреплены доказательства (скриншот/видео): требует человека")
+
         if is_spam:
             needs_human = True
             reasons.append("Обнаружен спам или дубликат обращения")
-        if category in HUMAN_ALWAYS_CATEGORIES:
-            needs_human = True
-            reasons.append(f"Категория '{category}' требует обязательного ручного разбора администратором")
 
         # Strict Rule Hallucination Shield: Validate extracted rule_refs against rules.json
         valid_rules_set = self.rag.validator.get_valid_rules()
@@ -210,6 +331,32 @@ class SupportCopilotPipeline:
                 needs_human = True
                 reasons.append(f"Указано несуществующее правило: {r}")
         extracted["rule_refs"] = valid_extracted_refs
+
+        # REQ 1: Operating Mode Handling
+        if self.operating_mode == "triage_only":
+            # Чистая классификация: генерация текста ответа отключена
+            draft_reply = {
+                "lang": lang if lang in ("ru", "kk", "uz", "en") else "ru",
+                "text": "",
+                "cited": [],
+            }
+            if needs_human and not reasons:
+                reasons.append("Обращение требует подтверждения администратора")
+            return {
+                "lang": lang,
+                "category": category,
+                "priority": priority,
+                "is_spam_or_duplicate": is_spam,
+                "extracted": extracted,
+                "draft_reply": draft_reply,
+                "needs_human": needs_human,
+                "confidence": confidence,
+                "reasons": sorted(list(set(reasons))),
+            }
+
+        if self.operating_mode == "copilot_only":
+            needs_human = True
+            reasons.append("Режим 'Ассистент модератора': требуется утверждение черновика оператором")
 
         # 7. RAG Engine
         rules = self.rag.retrieve(

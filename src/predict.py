@@ -1,5 +1,7 @@
 import argparse
+import gc
 import gzip
+import json
 import logging
 import os
 import sys
@@ -20,7 +22,7 @@ from tqdm import tqdm
 sys.path.insert(0, os.path.abspath("."))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.pipeline import SupportCopilotPipeline
+from src.pipeline import SupportCopilotPipeline, load_pipeline_config
 
 logging.basicConfig(
     level=logging.WARNING,
@@ -30,6 +32,7 @@ logger = logging.getLogger("predict")
 
 
 def parse_args():
+    cfg = load_pipeline_config()
     parser = argparse.ArgumentParser(
         description="Grand Mobile Support Copilot — Bulletproof Batch Inference"
     )
@@ -52,8 +55,31 @@ def parse_args():
         "-b",
         dest="batch_size",
         type=int,
-        default=64,
-        help="Batch processing chunk size (default: 64)",
+        default=int(cfg.get("batch_chunk_size", 64)),
+        help="Batch processing chunk size (default: from admin_config.json or 64)",
+    )
+    parser.add_argument(
+        "--mode",
+        "-m",
+        dest="mode",
+        choices=["full", "triage_only", "copilot_only"],
+        default=cfg.get("operating_mode", "full"),
+        help="Operational mode: 'full' (auto/draft), 'triage_only' (classification only, ultra-fast), 'copilot_only' (human review)",
+    )
+    parser.add_argument(
+        "--threads",
+        "-t",
+        dest="threads",
+        type=int,
+        default=int(cfg.get("cpu_threads", 8)),
+        help="Number of CPU cores/threads allocated for CatBoost and inference",
+    )
+    parser.add_argument(
+        "--ram-limit",
+        dest="ram_limit_mb",
+        type=int,
+        default=int(cfg.get("ram_limit_mb", 2048)),
+        help="Allocated RAM limit in Megabytes",
     )
     parser.add_argument(
         "--limit",
@@ -147,9 +173,11 @@ def stream_input_tickets(filepath: str) -> tuple[int, Any]:
                 data = orjson.loads(f.read())
             if isinstance(data, list):
                 total = len(data)
+
                 def gen():
                     for item in data:
                         yield item if isinstance(item, dict) else None, ""
+
                 return total, gen()
             else:
                 return 1, iter([(data if isinstance(data, dict) else None, "")])
@@ -158,6 +186,7 @@ def stream_input_tickets(filepath: str) -> tuple[int, Any]:
 
     # По умолчанию: построчный стриминг JSONL
     total = count_lines(filepath)
+
     def gen_lines():
         with open_fn(filepath, "rt", encoding="utf-8", errors="replace") as f:
             for line in f:
@@ -166,7 +195,7 @@ def stream_input_tickets(filepath: str) -> tuple[int, Any]:
                     continue
                 try:
                     yield orjson.loads(line_clean), line_clean
-                except Exception as exc:
+                except Exception:
                     yield None, line_clean
 
     return total, gen_lines()
@@ -178,6 +207,9 @@ def main():
     output_file = args.output_file
     batch_size = max(1, args.batch_size)
     limit = args.limit
+    mode = args.mode
+    threads = args.threads
+    ram_limit_mb = args.ram_limit_mb
 
     if not os.path.exists(input_file):
         # Graceful check: maybe .gz version exists or vice versa
@@ -189,18 +221,30 @@ def main():
             print(f"❌ Error: input file '{input_file}' not found.")
             sys.exit(1)
 
+    mode_labels = {
+        "full": "🟢 Полный режим (Fast-Path + Авто-ответы + Черновики)",
+        "triage_only": "⚡ Чистая классификация (Triage Only — без генерации текста, сверхбыстро)",
+        "copilot_only": "🛡️ Ассистент модератора (100% передача человеку с черновиками)",
+    }
+
     print("=" * 70)
     print("🚀 Grand Mobile Support Copilot — Bulletproof Batch Predictor")
-    print(f"📁 Input File:   {input_file}")
-    print(f"💾 Output File:  {output_file}")
-    print(f"📦 Batch Size:   {batch_size}")
+    print(f"📁 Input File:      {input_file}")
+    print(f"💾 Output File:     {output_file}")
+    print(f"🎛️ Mode:            {mode_labels.get(mode, mode)}")
+    print(f"⚙️ CPU Threads:     {threads} cores allocated")
+    print(f"🧠 RAM Limit:       {ram_limit_mb} MB")
+    print(f"📦 Batch Size:      {batch_size}")
     if limit:
-        print(f"🎯 Ticket Limit: {limit}")
+        print(f"🎯 Ticket Limit:    {limit}")
     print("=" * 70)
 
-    # 1. Initialize pipeline
+    # 1. Initialize pipeline with resource tuning
     t_init_start = time.perf_counter()
     pipeline = SupportCopilotPipeline()
+    pipeline.set_operating_mode(mode)
+    if hasattr(pipeline.classifier, "set_thread_count"):
+        pipeline.classifier.set_thread_count(threads)
     t_init = (time.perf_counter() - t_init_start) * 1000.0
     print(f"⚙️ Pipeline initialized in {t_init:.1f} ms. Rules and CatBoost loaded.\n")
 
@@ -272,6 +316,10 @@ def main():
             # Write whole batch to disk
             out_f.writelines(serialized_outputs)
 
+            # Memory optimization: if aggressive GC or low RAM budget, release unreferenced objects
+            if ram_limit_mb <= 2048 and processed_count % (batch_size * 4) == 0:
+                gc.collect()
+
         # Stream tickets in batches
         for ticket_item, raw_str in ticket_generator:
             batch_items.append((ticket_item, raw_str))
@@ -297,6 +345,7 @@ def main():
     print("🏆 INFERENCE COMPLETE — EXECUTION SUMMARY")
     print("=" * 70)
     print(f"• Total Processed Tickets: {processed_count}")
+    print(f"• Active Operating Mode:   {mode}")
     print(f"• Safe Fallbacks Triggered: {fallback_count} ({(fallback_count / max(1, processed_count))*100:.1f}%)")
     print(f"• Total Elapsed Time:       {total_time:.2f} s")
     print(f"• Processing Throughput:    {throughput:.1f} tickets/sec")
@@ -314,4 +363,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
