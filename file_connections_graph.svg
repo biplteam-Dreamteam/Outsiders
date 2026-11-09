@@ -1,0 +1,268 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1350 780" width="100%" height="100%" style="background:#0f172a; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+  <defs>
+    <!-- Arrow marker -->
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#64748b"/>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#38bdf8"/>
+    </marker>
+    <marker id="arrow-purple" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#c084fc"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#34d399"/>
+    </marker>
+
+    <!-- Node Shadows -->
+    <filter id="shadow" x="-8%" y="-8%" width="116%" height="116%">
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- Title Banner -->
+  <rect x="40" y="20" width="1270" height="55" rx="10" fill="#1e293b" stroke="#334155" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="65" y="54" fill="#f8fafc" font-size="20" font-weight="700">Outsiders Support Engine : Граф взаимосвязи и зависимостей файлов</text>
+  <rect x="1080" y="34" width="200" height="28" rx="14" fill="#0f172a" stroke="#38bdf8" stroke-width="1"/>
+  <text x="1102" y="52" fill="#38bdf8" font-size="12" font-weight="600">File Dependency Map</text>
+
+  <!-- COLUMN 1: ENTRY POINTS (X = 40) -->
+  <!-- main.py -->
+  <g transform="translate(40, 110)">
+    <rect width="160" height="55" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="20" y="32" fill="#f8fafc" font-size="14" font-weight="600">main.py</text>
+    <text x="20" y="46" fill="#94a3b8" font-size="10">Uvicorn Server Entry</text>
+  </g>
+
+  <!-- predict.py (root) -->
+  <g transform="translate(40, 210)">
+    <rect width="160" height="55" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="20" y="32" fill="#f8fafc" font-size="14" font-weight="600">predict.py</text>
+    <text x="20" y="46" fill="#94a3b8" font-size="10">CLI Proxy Wrapper</text>
+  </g>
+
+  <!-- admin_ui.py -->
+  <g transform="translate(40, 460)">
+    <rect width="160" height="55" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="20" y="32" fill="#f8fafc" font-size="14" font-weight="600">admin_ui.py</text>
+    <text x="20" y="46" fill="#94a3b8" font-size="10">Streamlit Dashboard</text>
+  </g>
+
+  <!-- COLUMN 2: ORCHESTRATION & GATEWAYS (X = 270) -->
+  <!-- app.py -->
+  <g transform="translate(270, 110)">
+    <rect width="170" height="60" rx="8" fill="#1e293b" stroke="#38bdf8" stroke-width="2" filter="url(#shadow)"/>
+    <text x="20" y="34" fill="#38bdf8" font-size="15" font-weight="700">app.py</text>
+    <text x="20" y="50" fill="#94a3b8" font-size="11">FastAPI REST /triage</text>
+  </g>
+
+  <!-- src/predict.py -->
+  <g transform="translate(270, 210)">
+    <rect width="170" height="60" rx="8" fill="#1e293b" stroke="#38bdf8" stroke-width="2" filter="url(#shadow)"/>
+    <text x="20" y="34" fill="#38bdf8" font-size="15" font-weight="700">src/predict.py</text>
+    <text x="20" y="50" fill="#94a3b8" font-size="11">Batch Streaming Engine</text>
+  </g>
+
+  <!-- src/pipeline.py -->
+  <g transform="translate(270, 340)">
+    <rect width="170" height="70" rx="8" fill="#1e293b" stroke="#818cf8" stroke-width="2" filter="url(#shadow)"/>
+    <text x="20" y="34" fill="#818cf8" font-size="15" font-weight="700">src/pipeline.py</text>
+    <text x="20" y="50" fill="#cbd5e1" font-size="11">SupportCopilotPipeline</text>
+    <text x="20" y="63" fill="#94a3b8" font-size="9">Central Dispatcher</text>
+  </g>
+
+  <!-- COLUMN 3: CORE ANALYTIC & ML MODULES (X = 520) -->
+  <!-- src/preprocessor.py -->
+  <g transform="translate(520, 110)">
+    <rect width="180" height="65" rx="8" fill="#1e293b" stroke="#64748b" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="18" y="30" fill="#f8fafc" font-size="13" font-weight="600">src/preprocessor.py</text>
+    <text x="18" y="46" fill="#94a3b8" font-size="10">CP1251 fix, Lang router,</text>
+    <text x="18" y="58" fill="#94a3b8" font-size="10">Entity extraction</text>
+  </g>
+
+  <!-- src/classifier.py -->
+  <g transform="translate(520, 220)">
+    <rect width="180" height="65" rx="8" fill="#1e293b" stroke="#c084fc" stroke-width="2" filter="url(#shadow)"/>
+    <text x="18" y="30" fill="#c084fc" font-size="13" font-weight="700">src/classifier.py</text>
+    <text x="18" y="46" fill="#94a3b8" font-size="10">Dual CatBoost Models</text>
+    <text x="18" y="58" fill="#94a3b8" font-size="10">Category + Priority + Conf</text>
+  </g>
+
+  <!-- src/guardrails.py -->
+  <g transform="translate(520, 330)">
+    <rect width="180" height="65" rx="8" fill="#1e293b" stroke="#f43f5e" stroke-width="2" filter="url(#shadow)"/>
+    <text x="18" y="30" fill="#f43f5e" font-size="13" font-weight="700">src/guardrails.py</text>
+    <text x="18" y="46" fill="#94a3b8" font-size="10">Risk Policy, Evidence,</text>
+    <text x="18" y="58" fill="#94a3b8" font-size="10">Draft Sanitizer</text>
+  </g>
+
+  <!-- src/deduplicator.py -->
+  <g transform="translate(520, 440)">
+    <rect width="180" height="55" rx="8" fill="#1e293b" stroke="#64748b" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="18" y="30" fill="#f8fafc" font-size="13" font-weight="600">src/deduplicator.py</text>
+    <text x="18" y="46" fill="#94a3b8" font-size="10">RapidFuzz spam window</text>
+  </g>
+
+  <!-- src/llm_client.py -->
+  <g transform="translate(520, 535)">
+    <rect width="180" height="65" rx="8" fill="#1e293b" stroke="#fb923c" stroke-width="2" filter="url(#shadow)"/>
+    <text x="18" y="30" fill="#fb923c" font-size="13" font-weight="700">src/llm_client.py</text>
+    <text x="18" y="46" fill="#94a3b8" font-size="10">Qwen 2.5 3B Docker</text>
+    <text x="18" y="58" fill="#94a3b8" font-size="10">Fallback Multilang slots</text>
+  </g>
+
+  <!-- COLUMN 4: LOW-LEVEL ENGINES & ASSETS (X = 780) -->
+  <!-- src/core_engine.cpp -->
+  <g transform="translate(780, 110)">
+    <rect width="190" height="60" rx="8" fill="#1e293b" stroke="#38bdf8" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="18" y="30" fill="#38bdf8" font-size="13" font-weight="700">src/core_engine.cpp</text>
+    <text x="18" y="46" fill="#94a3b8" font-size="10">PyBind11 SIMD L1 Table</text>
+  </g>
+
+  <!-- models/ (*.cbm, *.joblib) -->
+  <g transform="translate(780, 210)">
+    <rect width="190" height="75" rx="8" fill="#1e293b" stroke="#c084fc" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="18" y="28" fill="#c084fc" font-size="13" font-weight="700">models/</text>
+    <text x="18" y="45" fill="#94a3b8" font-size="10">category_model.cbm</text>
+    <text x="18" y="57" fill="#94a3b8" font-size="10">priority_model.cbm</text>
+    <text x="18" y="69" fill="#94a3b8" font-size="10">classifier_meta.joblib</text>
+  </g>
+
+  <!-- src/rules_mapper.py -->
+  <g transform="translate(780, 320)">
+    <rect width="190" height="55" rx="8" fill="#1e293b" stroke="#64748b" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="18" y="30" fill="#f8fafc" font-size="13" font-weight="600">src/rules_mapper.py</text>
+    <text x="18" y="46" fill="#94a3b8" font-size="10">Weak supervision rules</text>
+  </g>
+
+  <!-- src/rag_engine.py -->
+  <g transform="translate(780, 410)">
+    <rect width="190" height="65" rx="8" fill="#1e293b" stroke="#34d399" stroke-width="2" filter="url(#shadow)"/>
+    <text x="18" y="30" fill="#34d399" font-size="13" font-weight="700">src/rag_engine.py</text>
+    <text x="18" y="46" fill="#94a3b8" font-size="10">RAGEngine &amp; RuleValidator</text>
+    <text x="18" y="58" fill="#94a3b8" font-size="10">Slang Dictionary Search</text>
+  </g>
+
+  <!-- Local Ollama Daemon -->
+  <g transform="translate(780, 540)">
+    <rect width="190" height="55" rx="8" fill="#1e293b" stroke="#fb923c" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="18" y="30" fill="#fb923c" font-size="13" font-weight="600">Ollama Docker Service</text>
+    <text x="18" y="46" fill="#94a3b8" font-size="10">localhost:11434/v1</text>
+  </g>
+
+  <!-- COLUMN 5: KNOWLEDGE BASES & OUTPUTS (X = 1060) -->
+  <!-- rules.json -->
+  <g transform="translate(1060, 395)">
+    <rect width="210" height="60" rx="8" fill="#1e293b" stroke="#34d399" stroke-width="2" filter="url(#shadow)"/>
+    <text x="18" y="30" fill="#34d399" font-size="14" font-weight="700">rules.json</text>
+    <text x="18" y="46" fill="#94a3b8" font-size="10">101 Whitelist Rules (11 sections)</text>
+  </g>
+
+  <!-- taxonomy.json -->
+  <g transform="translate(1060, 300)">
+    <rect width="210" height="55" rx="8" fill="#1e293b" stroke="#64748b" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="18" y="30" fill="#f8fafc" font-size="14" font-weight="600">taxonomy.json</text>
+    <text x="18" y="46" fill="#94a3b8" font-size="10">14 Categories &amp; 4 Priorities</text>
+  </g>
+
+  <!-- pred.jsonl / Output Streams -->
+  <g transform="translate(1060, 160)">
+    <rect width="210" height="70" rx="8" fill="#042f2e" stroke="#14b8a6" stroke-width="2" filter="url(#shadow)"/>
+    <text x="18" y="30" fill="#2dd4bf" font-size="14" font-weight="700">pred.jsonl / REST Output</text>
+    <text x="18" y="48" fill="#94a3b8" font-size="10">Strict JSON Contract: 0 errors</text>
+    <text x="18" y="60" fill="#10b981" font-size="10" font-weight="600">needs_human / draft / cited</text>
+  </g>
+
+  <!-- data/rlhf.jsonl -->
+  <g transform="translate(1060, 490)">
+    <rect width="210" height="55" rx="8" fill="#1e293b" stroke="#64748b" stroke-width="1.5" filter="url(#shadow)"/>
+    <text x="18" y="30" fill="#f8fafc" font-size="13" font-weight="600">data/rlhf.jsonl</text>
+    <text x="18" y="46" fill="#94a3b8" font-size="10">DPO / Operator Feedback</text>
+  </g>
+
+  <!-- ==================== CONNECTORS ==================== -->
+  <!-- main.py -> app.py -->
+  <path d="M 200 137 C 235 137, 240 137, 270 137" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- predict.py (root) -> src/predict.py -->
+  <path d="M 200 237 C 235 237, 240 237, 270 237" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- app.py -> src/pipeline.py -->
+  <path d="M 355 170 C 355 240, 355 270, 355 340" fill="none" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow-blue)"/>
+
+  <!-- app.py -> src/rag_engine.py -->
+  <path d="M 440 130 C 580 130, 660 380, 780 435" fill="none" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="4 4" marker-end="url(#arrow-blue)"/>
+
+  <!-- src/predict.py -> src/pipeline.py -->
+  <path d="M 355 270 C 355 295, 355 315, 355 340" fill="none" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow-blue)"/>
+
+  <!-- src/predict.py -> pred.jsonl -->
+  <path d="M 440 230 C 650 170, 850 170, 1060 185" fill="none" stroke="#14b8a6" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- admin_ui.py -> src/pipeline.py / modules -->
+  <path d="M 200 487 C 235 487, 245 400, 270 375" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M 200 495 C 400 520, 750 515, 1060 515" fill="none" stroke="#64748b" stroke-width="1.5" stroke-dasharray="3 3" marker-end="url(#arrow)"/>
+
+  <!-- src/pipeline.py -> src/preprocessor.py -->
+  <path d="M 440 355 C 470 355, 480 150, 520 150" fill="none" stroke="#818cf8" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- src/pipeline.py -> src/classifier.py -->
+  <path d="M 440 370 C 470 370, 480 250, 520 250" fill="none" stroke="#818cf8" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- src/pipeline.py -> src/guardrails.py -->
+  <path d="M 440 375 C 475 375, 490 365, 520 365" fill="none" stroke="#818cf8" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- src/pipeline.py -> src/deduplicator.py -->
+  <path d="M 440 385 C 470 385, 480 460, 520 460" fill="none" stroke="#818cf8" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- src/pipeline.py -> src/llm_client.py -->
+  <path d="M 440 395 C 470 395, 480 560, 520 560" fill="none" stroke="#818cf8" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- src/preprocessor.py -> src/core_engine.cpp -->
+  <path d="M 700 140 C 730 140, 750 140, 780 140" fill="none" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow-blue)"/>
+
+  <!-- src/classifier.py -> models/ -->
+  <path d="M 700 245 C 730 245, 750 245, 780 245" fill="none" stroke="#c084fc" stroke-width="2" marker-end="url(#arrow-purple)"/>
+
+  <!-- src/classifier.py -> src/rules_mapper.py -->
+  <path d="M 700 260 C 730 260, 740 335, 780 335" fill="none" stroke="#c084fc" stroke-width="1.5" marker-end="url(#arrow-purple)"/>
+
+  <!-- src/pipeline.py -> src/rag_engine.py -->
+  <path d="M 440 405 C 560 440, 680 440, 780 440" fill="none" stroke="#34d399" stroke-width="2" marker-end="url(#arrow-green)"/>
+
+  <!-- src/rag_engine.py -> rules.json -->
+  <path d="M 970 435 C 1000 435, 1030 425, 1060 425" fill="none" stroke="#34d399" stroke-width="2" marker-end="url(#arrow-green)"/>
+
+  <!-- src/llm_client.py -> Ollama Docker -->
+  <path d="M 700 565 C 730 565, 750 565, 780 565" fill="none" stroke="#fb923c" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- src/guardrails.py -> taxonomy.json -->
+  <path d="M 700 355 C 800 355, 950 330, 1060 330" fill="none" stroke="#64748b" stroke-width="1.5" stroke-dasharray="3 3" marker-end="url(#arrow)"/>
+
+  <!-- src/guardrails.py -> src/llm_client.py (sanitize_draft) -->
+  <path d="M 610 395 C 610 470, 610 500, 610 535" fill="none" stroke="#f43f5e" stroke-width="1.5" stroke-dasharray="4 4" marker-end="url(#arrow)"/>
+
+  <!-- Legend in bottom left -->
+  <g transform="translate(40, 680)">
+    <rect width="660" height="75" rx="8" fill="#111827" stroke="#334155" stroke-width="1"/>
+    <text x="15" y="22" fill="#94a3b8" font-size="11" font-weight="700">ЛЕГЕНДА ТИПОВ СВЯЗЕЙ:</text>
+    
+    <line x1="20" y1="42" x2="60" y2="42" stroke="#38bdf8" stroke-width="2"/>
+    <text x="70" y="46" fill="#cbd5e1" font-size="11">HTTP / Batch Ingestion</text>
+
+    <line x1="220" y1="42" x2="260" y2="42" stroke="#818cf8" stroke-width="2"/>
+    <text x="270" y="46" fill="#cbd5e1" font-size="11">Pipeline Dispatch</text>
+
+    <line x1="400" y1="42" x2="440" y2="42" stroke="#c084fc" stroke-width="2"/>
+    <text x="450" y="46" fill="#cbd5e1" font-size="11">ML &amp; Model Weights</text>
+
+    <line x1="20" y1="62" x2="60" y2="62" stroke="#34d399" stroke-width="2"/>
+    <text x="70" y="66" fill="#cbd5e1" font-size="11">RAG Whitelist Validation</text>
+
+    <line x1="220" y1="62" x2="260" y2="62" stroke="#f43f5e" stroke-width="1.5" stroke-dasharray="4 4"/>
+    <text x="270" y="66" fill="#cbd5e1" font-size="11">Guardrails Sanitizing</text>
+
+    <line x1="400" y1="62" x2="440" y2="62" stroke="#14b8a6" stroke-width="2"/>
+    <text x="450" y="66" fill="#cbd5e1" font-size="11">Output Generation</text>
+  </g>
+</svg>

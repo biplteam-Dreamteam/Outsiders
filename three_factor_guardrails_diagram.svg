@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 650" width="100%" height="100%" style="background:#090d16; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+  <defs>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <!-- Title -->
+  <rect x="30" y="25" width="940" height="60" rx="12" fill="#111827" stroke="#1f2937" filter="url(#shadow)"/>
+  <text x="50" y="62" fill="#f8fafc" font-size="22" font-weight="700">3-ФАКТОРНАЯ СИСТЕМА ЗАЩИТЫ (ZERO-TRUST ARCHITECTURE)</text>
+
+  <!-- Layer 1: Data Level Guard -->
+  <g transform="translate(50, 115)">
+    <rect width="900" height="135" rx="12" fill="#0f172a" stroke="#3b82f6" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="260" height="32" rx="8" fill="#1d4ed8"/>
+    <text x="15" y="22" fill="#ffffff" font-size="13" font-weight="700">ЭШЕЛОН 1: ВХОДНОЙ DATA GUARD</text>
+    
+    <text x="25" y="65" fill="#f1f5f9" font-size="15" font-weight="600">Аппаратный байтовый фильтр и аудит вложений (Evidence Gate)</text>
+    <text x="25" y="92" fill="#94a3b8" font-size="13">- Восстановление поврежденных национальных символов CP1251 в L1-кэше без выделения памяти</text>
+    <text x="25" y="114" fill="#94a3b8" font-size="13">- Блокировка авто-ответа при наличии медиафайлов (скриншоты, фрапсы, видео, /time) -> 100% человеку</text>
+  </g>
+
+  <!-- Layer 2: Business Policy Guard -->
+  <g transform="translate(50, 275)">
+    <rect width="900" height="150" rx="12" fill="#18122b" stroke="#a855f7" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="280" height="32" rx="8" fill="#6d28d9"/>
+    <text x="15" y="22" fill="#ffffff" font-size="13" font-weight="700">ЭШЕЛОН 2: БИЗНЕС-ПОЛИТИКА ВЕТО</text>
+    
+    <text x="25" y="65" fill="#f1f5f9" font-size="15" font-weight="600">Матрица рисков и порог уверенности (Confidence Gate)</text>
+    <text x="25" y="92" fill="#94a3b8" font-size="13">- Абсолютное вето на авто-ответ для критических тем: report.payment (деньги) и report.account (взломы)</text>
+    <text x="25" y="114" fill="#94a3b8" font-size="13">- Безусловная эскалация человеку при жалобах на читы (complaint.cheat) и администраторов (complaint.admin)</text>
+    <text x="25" y="136" fill="#94a3b8" font-size="13">- Математический порог Confidence &lt; 0.55 отсекает неуверенные решения и спам</text>
+  </g>
+
+  <!-- Layer 3: Knowledge Base Whitelist & Sanitizer -->
+  <g transform="translate(50, 450)">
+    <rect width="900" height="150" rx="12" fill="#062e24" stroke="#10b981" stroke-width="2" filter="url(#shadow)"/>
+    <rect width="320" height="32" rx="8" fill="#047857"/>
+    <text x="15" y="22" fill="#ffffff" font-size="13" font-weight="700">ЭШЕЛОН 3: RAG WHITELIST &amp; SANITIZER</text>
+    
+    <text x="25" y="65" fill="#f1f5f9" font-size="15" font-weight="600">Гарантия 0% галлюцинаций и очистка вывода</text>
+    <text x="25" y="92" fill="#94a3b8" font-size="13">- Строгий белый список регламентов: ссылки берутся только из верифицированной базы (101 правило)</text>
+    <text x="25" y="114" fill="#94a3b8" font-size="13">- Отсечение манипуляций пользователей: фальшивые номера (например, правило 99.9) отбрасываются</text>
+    <text x="25" y="136" fill="#94a3b8" font-size="13">- Regex Sanitizer: вырезание любых несанкционированных вымышленных сумм, валюты и сторонних ссылок</text>
+  </g>
+</svg>

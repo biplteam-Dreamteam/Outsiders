@@ -116,11 +116,60 @@ def count_lines(filepath: str) -> int:
         return 0
 
 
-def open_input_stream(filepath: str):
-    """Универсальное открытие обычных JSONL и сжатых .gz файлов."""
-    if filepath.endswith(".gz"):
-        return gzip.open(filepath, "rt", encoding="utf-8", errors="replace")
-    return open(filepath, "r", encoding="utf-8", errors="replace")
+def is_json_array_file(filepath: str) -> bool:
+    """Определяет, является ли входной файл JSON-массивом (начинается с '[')."""
+    try:
+        open_fn = gzip.open if filepath.endswith(".gz") else open
+        with open_fn(filepath, "rt", encoding="utf-8", errors="replace") as f:
+            for chunk in iter(lambda: f.read(1024), ""):
+                stripped = chunk.lstrip("\ufeff \t\r\n")
+                if stripped:
+                    return stripped[0] == "["
+    except Exception:
+        pass
+    return False
+
+
+def stream_input_tickets(filepath: str) -> tuple[int, Any]:
+    """
+    Универсальный генератор входящих тикетов:
+    - Поддерживает .json массив ([{...}, {...}])
+    - Поддерживает .jsonl (по одной строке на тикет)
+    - Поддерживает .gz сжатие
+    Возвращает (total_count_or_0, generator_of_tuples(item_dict_or_none, raw_line_str))
+    """
+    is_array = is_json_array_file(filepath)
+    open_fn = gzip.open if filepath.endswith(".gz") else open
+
+    if is_array:
+        try:
+            with open_fn(filepath, "rt", encoding="utf-8", errors="replace") as f:
+                data = orjson.loads(f.read())
+            if isinstance(data, list):
+                total = len(data)
+                def gen():
+                    for item in data:
+                        yield item if isinstance(item, dict) else None, ""
+                return total, gen()
+            else:
+                return 1, iter([(data if isinstance(data, dict) else None, "")])
+        except Exception as exc:
+            logger.warning(f"Failed to parse JSON array file: {exc}")
+
+    # По умолчанию: построчный стриминг JSONL
+    total = count_lines(filepath)
+    def gen_lines():
+        with open_fn(filepath, "rt", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line_clean = line.strip()
+                if not line_clean:
+                    continue
+                try:
+                    yield orjson.loads(line_clean), line_clean
+                except Exception as exc:
+                    yield None, line_clean
+
+    return total, gen_lines()
 
 
 def main():
@@ -155,8 +204,8 @@ def main():
     t_init = (time.perf_counter() - t_init_start) * 1000.0
     print(f"⚙️ Pipeline initialized in {t_init:.1f} ms. Rules and CatBoost loaded.\n")
 
-    # 2. Count total tickets for progress bar
-    total_lines = count_lines(input_file)
+    # 2. Count total tickets for progress bar and prepare ticket stream
+    total_lines, ticket_generator = stream_input_tickets(input_file)
     if limit and (total_lines == 0 or total_lines > limit):
         total_lines = limit
 
@@ -172,7 +221,6 @@ def main():
 
     # 3. Batch reading and fault-tolerant processing
     with (
-        open_input_stream(input_file) as in_f,
         open(output_file, "wb") as out_f,
         tqdm(
             total=total_lines if total_lines > 0 else None,
@@ -182,27 +230,18 @@ def main():
             colour="green",
         ) as pbar,
     ):
-        batch_lines: list[str] = []
+        batch_items: list[tuple[dict[str, Any] | None, str]] = []
 
-        def flush_batch(lines: list[str]) -> None:
+        def flush_batch(items: list[tuple[dict[str, Any] | None, str]]) -> None:
             nonlocal processed_count, fallback_count
-            if not lines:
+            if not items:
                 return
 
             serialized_outputs: list[bytes] = []
 
-            for line_str in lines:
-                line_clean = line_str.strip()
-                if not line_clean:
-                    continue
-
-                item: dict[str, Any] | None = None
-                # Safe JSON parsing
-                try:
-                    item = orjson.loads(line_clean)
-                except Exception as exc:
-                    logger.warning(f"Corrupted JSON line encountered: {exc}")
-                    fallback = make_safe_fallback_response(None, exc)
+            for item, line_str in items:
+                if item is None:
+                    fallback = make_safe_fallback_response(None, ValueError("Invalid JSON format"))
                     serialized_outputs.append(orjson.dumps(fallback) + b"\n")
                     fallback_count += 1
                     processed_count += 1
@@ -233,19 +272,19 @@ def main():
             # Write whole batch to disk
             out_f.writelines(serialized_outputs)
 
-        # Stream file in batches
-        for line in in_f:
-            batch_lines.append(line)
-            if len(batch_lines) >= batch_size:
-                flush_batch(batch_lines)
-                batch_lines.clear()
+        # Stream tickets in batches
+        for ticket_item, raw_str in ticket_generator:
+            batch_items.append((ticket_item, raw_str))
+            if len(batch_items) >= batch_size:
+                flush_batch(batch_items)
+                batch_items.clear()
                 if limit and processed_count >= limit:
                     break
 
-        # Flush any remaining lines
-        if batch_lines and (not limit or processed_count < limit):
-            flush_batch(batch_lines)
-            batch_lines.clear()
+        # Flush any remaining items
+        if batch_items and (not limit or processed_count < limit):
+            flush_batch(batch_items)
+            batch_items.clear()
 
     total_time = max(time.time() - start_total_time, 0.0001)
     avg_latency = float(np.mean(latencies_ms)) if latencies_ms else 0.0
