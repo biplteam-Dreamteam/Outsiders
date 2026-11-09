@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import json
 import os
@@ -11,6 +12,7 @@ import streamlit as st
 # Setup paths
 sys.path.insert(0, os.path.abspath("."))
 from src.classifier import TicketClassifier
+from src.crm_connectors import CRMConnectorManager
 from src.deduplicator import TicketDeduplicator
 from src.guardrails import check_guardrails, sanitize_draft
 from src.llm_client import FALLBACK_TEMPLATES, LLMClient
@@ -22,6 +24,9 @@ CUSTOM_TEMPLATES_FILE = os.path.join("data", "custom_templates.json")
 FEEDBACK_FILE = os.path.join("data", "rlhf.jsonl")
 FEEDBACK_FILE_ALT = os.path.join("data", "admin_feedback_rlhf.jsonl")
 os.makedirs("data", exist_ok=True)
+
+# CRM Manager Singleton
+crm_manager = CRMConnectorManager()
 
 st.set_page_config(
     page_title="Via автоматизация — Enterprise Admin Panel",
@@ -325,7 +330,7 @@ kpi4.metric("Порог уверенности", f"{admin_cfg.get('confidence_th
 kpi5.metric("Стоимость токенов", "$0.0000", "100% On-Premise")
 
 # Main Navigation Tabs
-tab_queue, tab_config, tab_rules, tab_templates, tab_sandbox, tab_analytics, tab_batch = st.tabs(
+tab_queue, tab_config, tab_rules, tab_templates, tab_sandbox, tab_analytics, tab_batch, tab_crm = st.tabs(
     [
         "📋 Очередь тикетов",
         "⚙️ Настройки и Guardrails",
@@ -334,6 +339,7 @@ tab_queue, tab_config, tab_rules, tab_templates, tab_sandbox, tab_analytics, tab
         "🧪 Интерактивный симулятор",
         "📊 Аналитика и SLA",
         "📦 Пакетный процессор",
+        "🔌 CRM & Авто-ответчик",
     ]
 )
 
@@ -864,3 +870,214 @@ with tab_batch:
                 file_name="pred.jsonl",
                 mime="application/x-ndjson",
             )
+
+
+# ==============================================================================
+# TAB 8: B2B CRM ИНТЕГРАЦИИ & АВТОНОМНЫЙ АВТО-ОТВЕТЧИК
+# ==============================================================================
+with tab_crm:
+    st.subheader("🔌 B2B CRM Интеграции & Автономный авто-ответчик («Via автоматизация»)")
+    st.markdown(
+        "Бесшовная интеграция с корпоративными Service Desk и CRM-системами: **Telegram Support Bot, "
+        "Zendesk, amoCRM, Bitrix24 и Generic Webhooks**. "
+        "Система способна автономно разрешать до 50% стандартных обращений без участия человека, "
+        "а сложные и спорные кейсы направлять операторам с предварительно сгенерированным черновиком ответа."
+    )
+
+    # 1. LIVE B2B METRICS
+    crm_metrics = crm_manager.get_audit_metrics()
+    cm1, cm2, cm3, cm4 = st.columns(4)
+    cm1.metric(
+        "Всего тикетов CRM",
+        f"{crm_metrics['total_tickets']} шт.",
+        "За весь период",
+    )
+    cm2.metric(
+        "Автономных ответов (Deflection)",
+        f"{crm_metrics['auto_replied']} шт. ({crm_metrics['deflection_rate_pct']}%)",
+        f"+{crm_metrics['deflection_rate_pct']}% нагрузка снята",
+    )
+    cm3.metric(
+        "Эскалировано операторам",
+        f"{crm_metrics['escalated_to_operator']} шт.",
+        "С черновиками",
+    )
+    cm4.metric(
+        "Сэкономлено времени",
+        f"{crm_metrics['operator_hours_saved']} ч",
+        "~3 мин / тикет",
+    )
+
+    st.markdown("---")
+
+    crm_cfg = crm_manager.config
+
+    # 2. MASTER POLICIES
+    st.markdown("### 🛡️ Глобальная политика автономного ответа (Auto-Pilot Policy)")
+    crm_col_left, crm_col_right = st.columns([1, 1])
+
+    with crm_col_left:
+        auto_enabled = st.toggle(
+            "Включить автономный авто-ответчик (Auto-Reply)",
+            value=bool(crm_cfg.get("auto_reply_enabled", True)),
+            help="Если включено, система автоматически отправляет ответ пользователю при уверенности выше порога",
+        )
+        min_conf = st.slider(
+            "Минимальный порог уверенности модели для авто-ответа:",
+            min_value=0.50,
+            max_value=0.95,
+            value=float(crm_cfg.get("min_confidence_auto_reply", 0.70)),
+            step=0.05,
+            help="Обращения с уверенностью ниже порога ВСЕГДА отправляются человеку-оператору",
+        )
+
+    with crm_col_right:
+        all_tax_cats = [
+            "report.question",
+            "report.help",
+            "report.complaint",
+            "report.offtopic",
+            "complaint.invalid",
+            "report.account",
+            "report.payment",
+            "report.bag",
+            "complaint.other",
+        ]
+        allowed_cats = st.multiselect(
+            "Белый список категорий для 100% авто-ответа:",
+            options=all_tax_cats,
+            default=crm_cfg.get("allowed_auto_reply_categories", [
+                "report.question",
+                "report.help",
+                "report.complaint",
+                "report.offtopic",
+                "complaint.invalid",
+            ]),
+            help="Только в этих категориях бот может отвечать игрокам автономно",
+        )
+
+    st.markdown("---")
+
+    # 3. CRM CHANNELS & CREDENTIALS
+    st.markdown("### 🌐 Подключение каналов связи и CRM")
+    crm_tab_tg, crm_tab_zd, crm_tab_amo, crm_tab_hook = st.tabs([
+        "🤖 Telegram Support Bot",
+        "🎫 Zendesk Helpdesk",
+        "💼 amoCRM / Bitrix24",
+        "⚡ Universal Webhook API",
+    ])
+
+    with crm_tab_tg:
+        st.markdown("#### Настройка Telegram Support Bot")
+        st.info("Бот принимает сообщения пользователей, классифицирует их и отвечает либо эскалирует в закрытую группу саппорта.")
+        tg_cfg = crm_cfg.get("telegram", {})
+        tg_bot_token = st.text_input("Telegram Bot Token (от @BotFather):", value=tg_cfg.get("bot_token", ""), type="password")
+        tg_chat_id = st.text_input("ID закрытого канала операторов для эскалаций (chat_id):", value=tg_cfg.get("escalation_chat_id", ""))
+        st.code("Вебхук URL для регистрации бота: https://<your-host>:8000/webhook/telegram", language="bash")
+        st.caption("Для установки вебхука выполните: `curl -F 'url=https://<your-host>:8000/webhook/telegram' https://api.telegram.org/bot<TOKEN>/setWebhook`")
+
+    with crm_tab_zd:
+        st.markdown("#### Настройка Zendesk Support")
+        st.info("При авто-ответе бот ставит тикет в статус 'Solved' с публичным ответом. При эскалации оставляет приватную заметку (Internal Note) для оператора со статьями правил.")
+        zd_cfg = crm_cfg.get("zendesk", {})
+        zd_subdomain = st.text_input("Zendesk Subdomain (например, 'company'):", value=zd_cfg.get("subdomain", ""))
+        zd_email = st.text_input("Zendesk Agent Email:", value=zd_cfg.get("email", ""))
+        zd_token = st.text_input("Zendesk API Token:", value=zd_cfg.get("api_token", ""), type="password")
+        st.code("Вебхук URL для Zendesk Trigger: https://<your-host>:8000/webhook/zendesk", language="bash")
+
+    with crm_tab_amo:
+        st.markdown("#### Настройка amoCRM & Bitrix24")
+        st.info("Принимает лиды и обращения из чат-виджетов amoCRM и Bitrix24 через входящие вебхуки.")
+        st.code("Вебхук URL для amoCRM / Bitrix24: https://<your-host>:8000/webhook/crm/ticket", language="bash")
+        st.markdown("""
+        **Пример интеграции в amoCRM:**
+        1. В amoCRM перейдите в *Настройки -> Интеграции -> Webhooks*.
+        2. Добавьте хук на событие *"Создание сделки / Новое сообщение чата"*.
+        3. Укажите URL: `https://<your-host>:8000/webhook/crm/ticket`.
+        """)
+
+    with crm_tab_hook:
+        st.markdown("#### Универсальный HTTP REST Webhook")
+        st.info("Любая внутренняя система или самописный хелпдеск может отправлять тикеты по этому интерфейсу.")
+        st.code("POST https://<your-host>:8000/webhook/crm/ticket", language="http")
+        st.markdown("Тело запроса (JSON):")
+        st.code(
+            json.dumps({
+                "ticket_id": "ticket_12345",
+                "text": "Здравствуйте, как устроиться на работу инкассатором?",
+                "callback_url": "https://company.com/api/support/callback",
+                "lang": "ru",
+            }, indent=2, ensure_ascii=False),
+            language="json",
+        )
+
+    if st.button("💾 Сохранить конфигурацию CRM", type="primary"):
+        updated_crm_cfg = {
+            "auto_reply_enabled": auto_enabled,
+            "min_confidence_auto_reply": min_conf,
+            "allowed_auto_reply_categories": allowed_cats,
+            "generic_webhook": {"enabled": True, "default_callback_url": ""},
+            "telegram": {
+                "enabled": bool(tg_bot_token),
+                "bot_token": tg_bot_token.strip(),
+                "escalation_chat_id": tg_chat_id.strip(),
+            },
+            "zendesk": {
+                "enabled": bool(zd_subdomain and zd_token),
+                "subdomain": zd_subdomain.strip(),
+                "email": zd_email.strip(),
+                "api_token": zd_token.strip(),
+            },
+            "amocrm": {"enabled": True},
+        }
+        crm_manager.save_config(updated_crm_cfg)
+        st.success("✅ Настройки B2B интеграций и политики авто-ответа успешно сохранены!")
+
+    st.markdown("---")
+
+    # 4. LIVE SANDBOX / DISPATCH SIMULATOR
+    st.markdown("### 🧪 Интерактивный симулятор CRM-обращения")
+    st.markdown("Проверьте в реальном времени, как система обработает входящий тикет из CRM: отправит ли авто-ответ или эскалирует человеку.")
+
+    sim_c1, sim_c2 = st.columns([1, 2])
+    with sim_c1:
+        sim_crm_type = st.selectbox("Источник CRM:", ["generic", "telegram", "zendesk", "amocrm"])
+        sim_ticket_id = st.text_input("ID обращения:", "CRM-TEST-9901")
+        sim_has_photo = st.checkbox("Есть прикрепленное фото/доказательство", value=False)
+    with sim_c2:
+        sim_text = st.text_area("Текст обращения клиента / игрока:", "Здравствуйте! Подскажите, со скольки лет можно пойти в армию и какие документы нужны?", height=110)
+
+    if st.button("🚀 Симулировать обработку тикета", type="secondary"):
+        with st.spinner("Триаж и проверка правил Guardrails..."):
+            sim_payload = {
+                "ticket_id": sim_ticket_id,
+                "text": sim_text,
+                "images_count": 1 if sim_has_photo else 0,
+                "source_crm": sim_crm_type,
+            }
+            adapted = crm_manager.adapt_inbound_ticket(sim_crm_type, sim_payload)
+            triage_res = triage_ticket_sync(adapted, admin_cfg)
+            triage_res["draft_reply"] = sanitize_draft(
+                triage_res["draft_reply"], rag.get_valid_rules_dict()
+            )
+            dispatch_res = asyncio.run(crm_manager.process_and_dispatch(adapted, triage_res))
+
+            if dispatch_res["auto_replied"]:
+                st.success(f"🎉 **СТАТУС: АВТОНОМНЫЙ ОТВЕТ (AUTO-REPLY)** (Уверенность: {triage_res['confidence']:.2f})")
+                st.markdown(f"**Отправленный игроку ответ:**\n> {dispatch_res['reply_sent']}")
+            else:
+                st.warning(f"🛡️ **СТАТУС: ЭСКАЛАЦИЯ ОПЕРАТОРУ** (Причина: {'; '.join(triage_res.get('reasons', ['Не типовой запрос']))})")
+                st.markdown(f"**Сгенерированный черновик для оператора:**\n> {triage_res['draft_reply']['text']}")
+                st.caption(f"Цитируемые правила: {', '.join(triage_res['draft_reply'].get('cited', [])) or 'Общий регламент'}")
+
+    st.markdown("---")
+
+    # 5. LIVE AUDIT LOG STREAM
+    st.markdown("### 📜 Журнал аудита автономных решений (Audit Feed)")
+    if crm_metrics["recent_records"]:
+        df_audit = pd.DataFrame(crm_metrics["recent_records"])
+        cols_to_show = ["timestamp", "ticket_id", "source_crm", "category", "priority", "confidence", "status", "reply_text"]
+        existing_cols = [c for c in cols_to_show if c in df_audit.columns]
+        st.dataframe(df_audit[existing_cols], use_container_width=True)
+    else:
+        st.info("Журнал аудита пока пуст. Запустите симулятор или подключите вебхук для начала сбора аналитики.")

@@ -15,12 +15,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger("copilot-api")
 
+from src.crm_connectors import CRMConnectorManager
 from src.guardrails import sanitize_draft
 from src.pipeline import SupportCopilotPipeline
 from src.rag_engine import RuleValidator
 
 # Initialize RuleValidator singleton for Level 2 & 3 verification
 rule_validator = RuleValidator("rules.json")
+
+# Initialize B2B CRM & Auto-Reply Manager
+crm_manager = CRMConnectorManager()
 
 
 @asynccontextmanager
@@ -173,6 +177,104 @@ async def triage_endpoint(ticket: TicketRequest):
             confidence=0.50,
             reasons=[f"Обращение направлено оператору для ручной проверки: {exc!s}"],
         )
+
+
+# =============================================================================
+# 🔌 B2B CRM Webhooks & Автономный авто-ответчик («Via автоматизация»)
+# =============================================================================
+
+@app.post("/webhook/crm/ticket")
+async def webhook_crm_ticket(payload: dict[str, Any]):
+    """
+    Универсальный B2B Вебхук для приема тикетов из любой CRM-системы
+    (amoCRM, Bitrix24, Helpdesk, Webhook).
+    - Автоматически адаптирует структуру запроса
+    - Выполняет интеллектуальный триаж и генерацию черновика
+    - Если разрешено политикой безопасности -> автономно отправляет ответ по callback_url
+    - Если требуется оператор -> эскалирует и возвращает готовый черновик
+    """
+    try:
+        adapted_ticket = crm_manager.adapt_inbound_ticket("generic", payload)
+        triage_res = await pipeline.triage_ticket_async(adapted_ticket)
+        triage_res["draft_reply"] = sanitize_draft(
+            triage_res["draft_reply"], rule_validator.get_valid_rules()
+        )
+        dispatch_res = await crm_manager.process_and_dispatch(adapted_ticket, triage_res)
+        return dispatch_res
+    except Exception as e:
+        logger.error(f"CRM Webhook error: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": f"CRM processing error: {e!s}"},
+        )
+
+
+@app.post("/webhook/telegram")
+async def webhook_telegram(update: dict[str, Any]):
+    """
+    Вебхук для прямого подключения Telegram Support Bot:
+    - Принимает сообщение игрока / клиента из Telegram
+    - Триажирует и генерирует регламентный ответ
+    - При высоком доверии -> сразу отправляет ответ в чат Telegram
+    - При эскалации -> отправляет уведомление в закрытый канал операторов
+    """
+    try:
+        adapted_ticket = crm_manager.adapt_inbound_ticket("telegram", update)
+        if not adapted_ticket:
+            return {"status": "ignored", "reason": "No message in update"}
+
+        triage_res = await pipeline.triage_ticket_async(adapted_ticket)
+        triage_res["draft_reply"] = sanitize_draft(
+            triage_res["draft_reply"], rule_validator.get_valid_rules()
+        )
+        dispatch_res = await crm_manager.process_and_dispatch(adapted_ticket, triage_res)
+        return dispatch_res
+    except Exception as e:
+        logger.error(f"Telegram Webhook error: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+
+
+@app.post("/webhook/zendesk")
+async def webhook_zendesk(payload: dict[str, Any]):
+    """
+    Вебхук интеграции с Zendesk Support:
+    - Принимает событие создания/обновления тикета в Zendesk
+    - При авто-ответе -> публикует публичный комментарий и переводит тикет в 'solved'
+    - При эскалации -> публикует закрытую внутреннюю заметку (Internal Note) для оператора
+    """
+    try:
+        adapted_ticket = crm_manager.adapt_inbound_ticket("zendesk", payload)
+        triage_res = await pipeline.triage_ticket_async(adapted_ticket)
+        triage_res["draft_reply"] = sanitize_draft(
+            triage_res["draft_reply"], rule_validator.get_valid_rules()
+        )
+        dispatch_res = await crm_manager.process_and_dispatch(adapted_ticket, triage_res)
+        return dispatch_res
+    except Exception as e:
+        logger.error(f"Zendesk Webhook error: {e}", exc_info=True)
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+
+
+@app.get("/crm/metrics")
+def get_crm_metrics():
+    """Возвращает агрегированные B2B метрики автоматизации и Deflection Rate."""
+    return crm_manager.get_audit_metrics()
+
+
+@app.get("/crm/config")
+def get_crm_config():
+    """Возвращает текущую конфигурацию B2B CRM и авто-ответчика."""
+    return crm_manager.config
+
+
+@app.post("/crm/config")
+def update_crm_config(config_update: dict[str, Any]):
+    """Обновляет настройки автономного авто-ответчика и интеграций."""
+    try:
+        crm_manager.save_config(config_update)
+        return {"status": "success", "config": crm_manager.config}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
 
 if __name__ == "__main__":
