@@ -1,7 +1,21 @@
+import json
+import os
 import re
 from typing import Any
 
 HUMAN_REQUIRED_CATEGORIES = {"report.account", "report.payment", "complaint.admin"}
+CONFIG_FILE = os.path.join("data", "admin_config.json")
+
+
+def get_active_human_categories() -> set[str]:
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return set(data.get("human_required_categories", HUMAN_REQUIRED_CATEGORIES))
+        except Exception:
+            pass
+    return HUMAN_REQUIRED_CATEGORIES
 
 # Multilingual keywords for high-risk / human required topics
 PAYMENT_KEYWORDS = {
@@ -240,7 +254,7 @@ def check_guardrails(
     text_lower = text.lower()
 
     # СЛУЧАЙ 1: Критичные темы (Guardrails)
-    if category in HUMAN_REQUIRED_CATEGORIES:
+    if category in get_active_human_categories():
         needs_human = True
         reasons.append(
             f"Категория '{category}' требует обязательного ручного разбора администратором"
